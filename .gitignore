@@ -1,0 +1,112 @@
+# ==========================================================
+# .gitignore — TypeScript / Node 工程
+# 组合自 github/gitignore: Node + macOS + VisualStudioCode
+# 官方无独立 TypeScript 模板，TS 规则（*.tsbuildinfo）在 Node 中
+# ==========================================================
+
+# ---------- 依赖 ----------
+node_modules/
+jspm_packages/
+web_modules/
+bower_components/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.yarn-integrity
+.pnpm-store
+.npm
+
+# ---------- TypeScript 编译 / 构建产物 ----------
+# 增量编译信息，必须忽略，否则反复产生冲突
+*.tsbuildinfo
+# 以下按你的框架保留，用不到的删掉
+dist/
+dist-ssr/
+build/
+out/
+.output/
+.next/
+.nuxt/
+.svelte-kit/
+.astro/
+.vite/
+.turbo/
+.cache/
+.parcel-cache/
+.temp
+.vuepress/dist
+**/.vitepress/dist
+**/.vitepress/cache
+.docusaurus
+.serverless/
+.fusebox/
+.firebase/
+.dynamodb/
+build/Release
+lib-cov
+
+# ---------- 环境变量 ----------
+.env
+.env.*
+!.env.example
+*.local
+
+# ---------- 日志与调试 ----------
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+pids
+*.pid
+*.seed
+*.pid.lock
+.node_repl_history
+.tern-port
+
+# ---------- 测试与检查缓存 ----------
+coverage
+*.lcov
+.nyc_output
+.eslintcache
+.stylelintcache
+
+# ---------- 打包产物 ----------
+*.tgz
+*.vsix
+
+# ---------- 编辑器 ----------
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+!*.code-workspace
+.vscode-test
+.idea/
+
+# ---------- macOS 系统文件 ----------
+.DS_Store
+.localized
+__MACOSX/
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+.com.apple.timemachine.donotpresent
+.apdisk
+Network Trash Folder
+Temporary Items
