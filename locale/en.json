@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Trace",
+    "description": "Expandable tree of model calls, tools, subagents, titles, compaction, and search."
+  }
+}

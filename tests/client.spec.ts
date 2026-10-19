@@ -1,0 +1,48 @@
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { childExpandable, defaultExpanded, emptyTrack, toggleExpanded } from '../src/shared/model.ts'
+import { traceCss } from '../src/client/styles.ts'
+
+function sources(dir: string): string[] {
+  return readdirSync(dir).flatMap(name => {
+    const path = join(dir, name)
+    if (statSync(path).isDirectory()) return sources(path)
+    return path.endsWith('.ts') || path.endsWith('.tsx') ? [readFileSync(path, 'utf8')] : []
+  })
+}
+
+describe('client', () => {
+  it('keeps expansion in component state and leaves the projection untouched', () => {
+    const track = emptyTrack()
+    expect(defaultExpanded('turn', 'running')).toBe(true)
+    expect(defaultExpanded('turn', 'ok')).toBe(false)
+    const open = toggleExpanded({}, 'sess:turn:1', false)
+    expect(open).toEqual({ 'sess:turn:1': true })
+    expect(toggleExpanded(open, 'sess:turn:1', false)).toEqual({ 'sess:turn:1': false })
+    expect(track).toEqual(emptyTrack())
+    expect(childExpandable('external')).toBe(false)
+  })
+
+  it('uses alias colors, one web client, and no desktop-only frame', () => {
+    expect(traceCss).toContain('--dsw-alias-')
+    expect(traceCss).toContain('--dsh-frame-leading-clearance')
+    expect(traceCss).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(traceCss).not.toMatch(/rgb\(|rgba\(/)
+    const client = sources(join(process.cwd(), 'src/client')).join('\n')
+    expect(client).not.toContain('iframe')
+    expect(client).not.toContain('BrowserWindow')
+    expect(client).not.toMatch(/from ['"]\.\.\/host/)
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+      dsh: { client: { platform: string } }
+    }
+    const materialize = readFileSync(join(process.cwd(), 'src/host/materialize.ts'), 'utf8')
+    const toolHistory = readFileSync(join(process.cwd(), 'src/host/tool-history.ts'), 'utf8')
+    expect(materialize).not.toContain('deepseek-harness')
+    expect(toolHistory).toContain("require.resolve('@deepseek-ai/dsh-session/package.json')")
+    expect(pkg.dsh.client.platform).toBe('web')
+    const patch = readFileSync(join(process.cwd(), 'cordis.patch.yml'), 'utf8')
+    expect(patch).toContain('id: dsh-track')
+    expect(patch).not.toContain('client')
+  })
+})

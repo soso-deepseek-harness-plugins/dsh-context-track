@@ -6,6 +6,8 @@
 
 # ---------- 依赖 ----------
 node_modules/
+package-lock.json
+yarn.lock
 jspm_packages/
 web_modules/
 bower_components/
@@ -114,3 +116,4 @@ Temporary Items
 #-----------------
 .cursor
 openspec
+docs/design.md
