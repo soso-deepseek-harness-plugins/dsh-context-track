@@ -1,4 +1,4 @@
-/** Glyph shared by the conversation tab, the right-sidebar guide, and the tab chip. */
+/** Glyph shared by the conversation tab, the sidebars, and the tab chip. */
 import type { ReactNode } from 'react'
 import type { TrackKey } from './locales.js'
 

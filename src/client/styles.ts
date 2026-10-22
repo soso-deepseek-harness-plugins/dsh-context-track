@@ -1,7 +1,7 @@
 /**
  * Panel chrome. Colors come from the host alias tokens. The conversation tab
- * and the right sidebar own the surrounding frame, so this panel does not add
- * window-control clearance of its own.
+ * and the right sidebar own the surrounding frame. The centre page opened
+ * from the left sidebar starts below the macOS window strip.
  */
 export const traceCss = `
 .dsh-context-track {
@@ -16,6 +16,10 @@ export const traceCss = `
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+}
+/* The centre column reaches the window edge when the left sidebar is collapsed. */
+[data-platform='darwin'] .dsh-context-track-main {
+  padding-top: var(--dsh-frame-top-clearance, 0px);
 }
 .dsh-context-track-tree,
 .dsh-context-track-detail {

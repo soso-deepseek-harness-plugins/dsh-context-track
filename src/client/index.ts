@@ -1,7 +1,7 @@
 /**
  * One web client for browser Harness and the Desktop Electron shell.
- * The entry matches dsh-context: a conversation tab, and a right-sidebar
- * guide page that opens the same panel beside the chat.
+ * The entries match dsh-context: a conversation tab, a right-sidebar guide
+ * page, and a left-sidebar panel row that opens the same panel in the centre.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
@@ -12,7 +12,7 @@ import { TraceIcon, TraceTabTitle } from './Icon.js'
 import { en, NS, zh } from './locales.js'
 import { trackRemote } from './remote.js'
 import './slots.js'
-import { TracePage, type TrackInject } from './TracePage.js'
+import { TraceMain, TracePage, type TrackInject } from './TracePage.js'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -28,6 +28,12 @@ export const VIEW_ID = 'context-track'
 export const TAB_ID = 'dsh-context-track'
 
 /**
+ * Left-sidebar row and the centre panel it opens.
+ * Sits after Plugins (0), Automation tasks (10), and dsh-context's insights row (20).
+ */
+export const PANEL_ID = 'dsh-context-track'
+
+/**
  * Cordis services this plugin waits for before `apply`.
  * `remote.track` is not in this list: nothing else mounts it, so waiting here
  * would leave the plugin pending. `apply` mounts it, then a child context
@@ -38,7 +44,7 @@ export const TAB_ID = 'dsh-context-track'
 export const inject = ['slots', 'locale', 'remote']
 
 /**
- * Register both entries. They share one panel and one remote.
+ * Register the three entries. They share one panel and one remote.
  * @param ctx - browser plugin context.
  */
 export async function apply(ctx: Context): Promise<void> {
@@ -80,5 +86,21 @@ export async function apply(ctx: Context): Promise<void> {
         locale: NS,
       }, TraceTabTitle))
     })
+    // The row and the centre page share one id. `slots.inject` waits until the
+    // shell declares each seat, so a host without the left sidebar still mounts
+    // the conversation tab and the right-sidebar page.
+    trackCtx.slots.inject('sidebar.panellist', () => trackCtx.slots.register({
+      name: 'sidebar.panellist',
+      id: PANEL_ID,
+      order: 30,
+      locale: NS,
+      label: () => t('panel'),
+    }, TraceIcon))
+    trackCtx.slots.inject('main', () => trackCtx.slots.register({
+      name: 'main',
+      key: PANEL_ID,
+      locale: NS,
+      inject: (): TrackInject => ({ getNode }),
+    }, TraceMain))
   })
 }

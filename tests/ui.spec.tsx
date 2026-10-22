@@ -6,7 +6,7 @@ import type { NodeDetail } from '../src/shared/detail.ts'
 import { TRACK_STATE_VERSION, type TrackState } from '../src/shared/model.ts'
 import { en, zh, type TrackKey } from '../src/client/locales.ts'
 import { traceCss } from '../src/client/styles.ts'
-import { TracePage, type TracePageProps } from '../src/client/TracePage.tsx'
+import { TraceMain, TracePage, type TracePageProps } from '../src/client/TracePage.tsx'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -98,6 +98,28 @@ describe('trace panel', () => {
     for (const node of document.head.querySelectorAll('style')) {
       if (node.dataset.dshContextTrack === undefined) node.remove()
     }
+  })
+
+  it('follows the retained session from the left-sidebar centre page', async () => {
+    const getNode = vi.fn()
+    const list = session(finishedTurn)
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    roots.push(root)
+    const props = {
+      useSessions: (selector: (state: ListState) => unknown) => selector(list),
+      t: (key: TrackKey) => zh[key],
+      getNode,
+    } as unknown as Parameters<typeof TraceMain>[0]
+    act(() => { root.render(<TraceMain {...props} />) })
+    expect(host.textContent).toContain('回合 1')
+    expect(host.querySelector('.dsh-context-track-main')).not.toBeNull()
+
+    list.byId.sess = { id: 'sess', retainedBy: {} }
+    act(() => { root.render(<TraceMain {...props} />) })
+    expect(host.textContent).toContain(zh.empty)
+    expect(getNode).not.toHaveBeenCalled()
   })
 
   it('shows the empty state and does not request a node when no session is open', async () => {

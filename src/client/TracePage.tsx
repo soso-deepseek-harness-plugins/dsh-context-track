@@ -1,8 +1,10 @@
 /**
  * Context-trace panel. The conversation tab and the right sidebar are both
- * session-scoped, so the current session is `sessionId`. Detail refreshes when
- * that session's committed projection changes. It does not subscribe to the
- * token stream. Child sessions are read from the session list.
+ * session-scoped, so the current session is `sessionId`. The left-sidebar
+ * centre page is root-scoped: it follows the session the shell retains for
+ * the main view. Detail refreshes when that session's committed projection
+ * changes. It does not subscribe to the token stream. Child sessions are
+ * read from the session list.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -28,16 +30,42 @@ export interface TrackInject {
 
 type SessionView = PropsRuntime<'conversation.view'>
 
-export type TracePageProps = Pick<SessionView, 'sessionId' | 'useSessions'> & PropsLocale<'dsh-context-track'> & TrackInject
+export type TracePageProps = Omit<Pick<SessionView, 'sessionId' | 'useSessions'>, 'sessionId'> & PropsLocale<'dsh-context-track'> & TrackInject & {
+  /** Absent on the centre page until the shell retains a session. */
+  sessionId?: string
+  /** `main` is the centre column opened from the left sidebar. */
+  host?: 'main'
+}
+
+/** The session the shell is showing. Opening this panel does not change it. */
+function mainSessionId(byId: object): string | undefined {
+  for (const value of Object.values(byId)) {
+    if (value === null || typeof value !== 'object') continue
+    const row = value as { id?: unknown; retainedBy?: { mainView?: unknown } }
+    const weight = row.retainedBy?.mainView
+    if (typeof row.id === 'string' && typeof weight === 'number' && weight > 0) return row.id
+  }
+  return undefined
+}
 
 interface Selection {
   sessionId: string
   nodeId: string
 }
 
+/**
+ * Centre-column page for the left-sidebar row. The row's panel has no session
+ * binding, so the tree follows the retained main session.
+ */
+export function TraceMain(props: Omit<TracePageProps, 'sessionId' | 'host'>): ReactNode {
+  const sessionId = props.useSessions(state => mainSessionId(state.byId))
+  return <TracePage {...props} host="main" sessionId={sessionId} />
+}
+
 /** Left tree and right detail for the session this tab is bound to. */
-export function TracePage({ sessionId, useSessions, t, getNode }: TracePageProps): ReactNode {
+export function TracePage({ sessionId, useSessions, t, getNode, host }: TracePageProps): ReactNode {
   ensureStyles()
+  const rootClass = host === 'main' ? 'dsh-context-track dsh-context-track-main' : 'dsh-context-track'
   const list = useSessions(state => state)
   const track = sessionId === undefined ? undefined : readTrack(list.projectionsBySession, sessionId)
   const [open, setOpen] = useState<Readonly<Record<string, boolean>>>({})
@@ -69,11 +97,11 @@ export function TracePage({ sessionId, useSessions, t, getNode }: TracePageProps
     return () => { cancelled = true }
   }, [sessionId, selection, selectedTrack, getNode])
 
-  if (sessionId === undefined) return <div className="dsh-context-track"><p className="dsh-context-track-empty">{t('empty')}</p></div>
+  if (sessionId === undefined) return <div className={rootClass}><p className="dsh-context-track-empty">{t('empty')}</p></div>
 
   const translate = (key: TrackKey): string => t(key)
   return (
-    <div className="dsh-context-track">
+    <div className={rootClass}>
       <div className="dsh-context-track-tree">
         <Tree
           sessionId={sessionId}
