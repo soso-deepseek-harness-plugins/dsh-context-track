@@ -51,12 +51,19 @@ export function TracePage({ useSessions, t, getNode }: TracePageProps): ReactNod
   useEffect(() => {
     if (sessionId === undefined || selection === undefined) return undefined
     let cancelled = false
-    void getNode(selection.sessionId, selection.nodeId).then(result => {
+    const showMissing = () => { if (!cancelled) setDetail({ missing: true }) }
+    // A throw here used to hit the slot error boundary and remove the whole panel.
+    let pending: Promise<RemoteResult<NodeDetail>>
+    try {
+      pending = Promise.resolve(getNode(selection.sessionId, selection.nodeId))
+    } catch {
+      showMissing()
+      return () => { cancelled = true }
+    }
+    void pending.then(result => {
       if (cancelled) return
       setDetail(result.ok ? result.value : { missing: true })
-    }, () => {
-      if (!cancelled) setDetail({ missing: true })
-    })
+    }, showMissing)
     return () => { cancelled = true }
   }, [sessionId, selection, selectedTrack, getNode])
 

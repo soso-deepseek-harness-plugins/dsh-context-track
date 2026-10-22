@@ -6,10 +6,13 @@ export const traceCss = `
 .dsh-track {
   box-sizing: border-box;
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
   align-items: stretch;
   min-width: 0;
+  /* The centre column clips overflow. A content-sized panel is cut off and cannot scroll. */
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
   padding-inline-start: var(--dsh-frame-leading-clearance, 0px);
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
@@ -19,6 +22,8 @@ export const traceCss = `
   box-sizing: border-box;
   flex: 1 1 16rem;
   min-width: 0;
+  /* auto would keep each column as tall as its text, so overflow never starts. */
+  min-height: 0;
   overflow: auto;
   padding: 0.75rem;
 }
@@ -29,6 +34,16 @@ export const traceCss = `
 .dsh-track-muted {
   color: var(--dsw-alias-label-secondary);
 }
+.dsh-track button {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  /* Author color: the user-agent button color is canvas black and disappears on the dark panel. */
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
 .dsh-track-row {
   display: flex;
   align-items: center;
@@ -37,8 +52,6 @@ export const traceCss = `
   width: 100%;
   text-align: start;
   color: inherit;
-  background: transparent;
-  border: 0;
 }
 .dsh-track-row[aria-current="true"] {
   background: var(--dsw-alias-interactive-bg-hover);

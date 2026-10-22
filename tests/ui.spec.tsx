@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NodeDetail } from '../src/shared/detail.ts'
 import { TRACK_STATE_VERSION, type TrackState } from '../src/shared/model.ts'
 import { en, zh, type TrackKey } from '../src/client/locales.ts'
+import { traceCss } from '../src/client/styles.ts'
 import { TracePage, type TracePageProps } from '../src/client/TracePage.tsx'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -93,6 +94,9 @@ describe('trace panel', () => {
     for (const root of roots) act(() => { root.unmount() })
     roots.length = 0
     document.body.innerHTML = ''
+    for (const node of document.head.querySelectorAll('style')) {
+      if (node.dataset.dshTrack === undefined) node.remove()
+    }
   })
 
   it('shows the empty state and does not request a node when no session is open', async () => {
@@ -112,6 +116,19 @@ describe('trace panel', () => {
     const english = mount(page({ ids: [], byId: {}, projectionsBySession: {} }, getNode, 'en'))
     roots.push(english.root)
     expect(english.host.textContent).toContain(en.empty)
+  })
+
+  it('paints tree labels with the panel color instead of the user-agent button color', () => {
+    const userAgent = document.createElement('style')
+    userAgent.textContent = 'button { color: black; }'
+    document.head.appendChild(userAgent)
+    const view = mount(page(session(finishedTurn), vi.fn()))
+    roots.push(view.root)
+    const panel = view.host.querySelector('.dsh-track') as HTMLElement
+    panel.style.setProperty('--dsw-alias-label-primary', 'rgb(240, 240, 240)')
+    const label = buttons(view.host, '回合 1')[0]
+    expect(label).toBeDefined()
+    expect(getComputedStyle(label!).color).toBe('rgb(240, 240, 240)')
   })
 
   it('hides a finished turn’s children without writing the projection', async () => {
@@ -137,6 +154,42 @@ describe('trace panel', () => {
     await click(buttons(view.host, zh.expand).find(button => button.parentElement?.textContent?.includes('spawn')))
     expect(view.host.textContent).toContain('回合 7')
     expect(view.host.textContent).not.toContain(zh.unavailable)
+  })
+
+  it('keeps the tree visible when reading a node throws', async () => {
+    const getNode = vi.fn(() => {
+      throw new Error('cannot get property "remote.track" without inject')
+    })
+    const view = mount(page(session(finishedTurn), getNode))
+    roots.push(view.root)
+    await click(buttons(view.host, '回合 1')[0])
+    expect(view.host.textContent).toContain('回合 1')
+    expect(view.host.textContent).toContain(zh.missing)
+    expect(view.host.querySelector('.dsh-track-tree')).not.toBeNull()
+  })
+
+  it('scrolls the detail pane when the node body is taller than the panel', async () => {
+    const attempt: NodeDetail = {
+      kind: 'attempt', status: 'ok', inputSeq: 3,
+      messages: [{ text: `${'line\n'.repeat(80)}tail-marker` }],
+      tools: [], toolHistory: { tools: [], updates: [] }, config: {}, output: { text: 'seen-output' },
+    }
+    const view = mount(page(session(finishedTurn), vi.fn(async () => ({ ok: true as const, value: attempt }))))
+    roots.push(view.root)
+    view.host.style.cssText = 'display:flex;flex-direction:column;height:160px;overflow:hidden;'
+    await click(buttons(view.host, zh.expand)[0])
+    await click(buttons(view.host, '步骤 1')[0])
+    await act(async () => { await Promise.resolve() })
+    const detail = view.host.querySelector('.dsh-track-detail') as HTMLElement
+    const tree = view.host.querySelector('.dsh-track-tree') as HTMLElement
+    const track = view.host.querySelector('.dsh-track') as HTMLElement
+    expect(getComputedStyle(track).minHeight).not.toBe('auto')
+    expect(getComputedStyle(detail).minHeight).not.toBe('auto')
+    expect(getComputedStyle(tree).minHeight).not.toBe('auto')
+    expect(traceCss).toMatch(/\.dsh-track \{[^}]*overflow:\s*hidden/)
+    expect(traceCss).toMatch(/\.dsh-track-detail \{[^}]*overflow:\s*auto/)
+    expect(view.host.textContent).toContain('回合 1')
+    expect(view.host.textContent).toContain('tail-marker')
   })
 
   it('loads the latest attempt and a running prefix without a token subscription', async () => {

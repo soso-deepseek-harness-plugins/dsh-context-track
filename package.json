@@ -25,12 +25,13 @@
     "cordis.patch.yml",
     "locale/*.json",
     "dist/**/*.js",
+    "dist/**/*.js.map",
     "dist/**/*.d.ts"
   ],
-  "packageManager": "pnpm@12.14.0",
+  "packageManager": "pnpm@11.28.5",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "pnpm": ">=12",
+    "pnpm": ">=11",
     "dsh": ">=0.2.0-0 <0.3.0"
   },
   "dsh": {
@@ -50,7 +51,8 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsdown",
+    "clean": "rm -rf dist",
     "prepublishOnly": "pnpm run build",
     "test": "vitest run"
   },
@@ -90,8 +92,10 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "happy-dom": "^21.0.3",
+    "pnpm": "11.28.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tsdown": "0.22.2",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }
