@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Web client artifact. Harness loads `exports["./client"]` as a classic script
  * and only accepts a `window.__ModuleLoader__.load` factory. `tsc` stays the
@@ -11,7 +12,7 @@ const id = manifest.name
 
 export default defineConfig({
   entry: { index: 'src/client/index.ts' },
-  outDir: 'dist/client',
+  outDir: 'lib/client',
   format: 'cjs',
   platform: 'browser',
   dts: false,

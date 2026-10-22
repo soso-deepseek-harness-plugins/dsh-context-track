@@ -1,6 +1,6 @@
 # 编译 · 发布 · 安装 · 卸载
 
-包名 **`dsh-context-track`**。发布物是已构建的 `dist/`（外加 `icon.svg`、`cordis.patch.yml`、`locale/`）。安装方**不必**再 build。
+包名 **`dsh-context-track`**。发布物是已构建的 `lib/`（外加 `icon.svg`、`cordis.patch.yml`、`locale/`）。安装方**不必**再 build。
 
 | 场景 | 章节 |
 | --- | --- |
@@ -22,10 +22,10 @@
 pnpm install
 pnpm test
 pnpm run build
-pnpm run clean          # 删掉 dist/
+pnpm run clean          # 删掉 lib/
 ```
 
-编完应有 `dist/host/index.js`，以及 Web 客户端 `dist/client/index.js`。后者是 `window.__ModuleLoader__.load` 工厂，不是 `tsc` 直接吐出的 ESM。`pnpm publish` 前会自动再 build。`clean` 只清本仓库构建产物，不碰 `$DSH_HOME` 或 profile。
+编完应有 `lib/host/index.js`，以及 Web 客户端 `lib/client/index.js`。后者是 `window.__ModuleLoader__.load` 工厂，不是 `tsc` 直接吐出的 ESM。`pnpm publish` 前会自动再 build。`clean` 只清本仓库构建产物，不碰 `$DSH_HOME` 或 profile。
 
 ### 验包
 
@@ -34,7 +34,7 @@ pnpm run build && pnpm pack
 tar -tzf dsh-context-track-*.tgz | head -40
 ```
 
-清单里须有 `package/dist/...`。只有 `package.json`、没有 `dist/` → `files` 配错了。
+清单里须有 `package/lib/...`。只有 `package.json`、没有 `lib/` → `files` 配错了。
 
 ```bash
 dsh plugin --profile demo add ./dsh-context-track-<version>.tgz
@@ -159,7 +159,7 @@ $DSH_HOME/profiles/<profile>/dsh-context-track/
 
 ```bash
 cd /path/to/deepseek-harness && pnpm install && pnpm run build
-cd /path/to/dsh-context-track        && pnpm install && pnpm run build   # 必须有 dist/
+cd /path/to/dsh-context-track        && pnpm install && pnpm run build   # 必须有 lib/
 ```
 
 日常改插件：
@@ -254,7 +254,7 @@ pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
 # /path/to/dsh-context-track/dev.patch.yml
 - insert:
     - id: dsh-context-track
-      name: '/path/to/dsh-context-track/dist/host/index.js'
+      name: '/path/to/dsh-context-track/lib/host/index.js'
 ```
 
 ```bash
@@ -286,8 +286,8 @@ pnpm dsh web --patch /path/to/dsh-context-track/dev.patch.yml
 | `select a profile only once` | `dsh web` 已等价于 `--profile web`，用 `dsh web` 或 `dsh --profile web` 其一，不要叠写 |
 | publish 403 / 409 | 登录、换包名，或升版本 |
 | publish 404 / 推包失败 | 加 `--registry=https://registry.npmjs.org/` |
-| 装上了但加载失败 | 先 `pnpm run build`，再用 `tar -tzf` 确认 tgz 有 `dist/` |
-| Web / Desktop 没有「上下文链路追踪」 | 确认编过 `dist/client/index.js`（工厂包，不是裸 ESM），且用对应 profile 的 `plugin add` 整包装入。页签只在打开会话后出现 |
+| 装上了但加载失败 | 先 `pnpm run build`，再用 `tar -tzf` 确认 tgz 有 `lib/` |
+| Web / Desktop 没有「上下文链路追踪」 | 确认编过 `lib/client/index.js`（工厂包，不是裸 ESM），且用对应 profile 的 `plugin add` 整包装入。页签只在打开会话后出现 |
 | Desktop 装上了但界面没有 | 确认 `DSH_HOME` 与启动一致；装完后重开应用 |
 | Desktop `plugin add` 失败 | 先 `start:desktop` 开一次并完全退出，再在 harness 根目录 `pnpm dsh plugin …` |
 | `remove` 后仍有「上下文链路追踪」 | 确认卸的是同一 `DSH_HOME` / profile；Web 重启或刷新，Desktop 重开 |

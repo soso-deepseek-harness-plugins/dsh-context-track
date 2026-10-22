@@ -63,7 +63,7 @@ dsh plugin --profile <profile> add dsh-context-track
 ```bash
 pnpm install
 pnpm test        # Vitest，用例在 tests/
-pnpm run build   # Host → dist/，客户端 → dist/client/index.js
+pnpm run build   # Host → lib/，客户端 → lib/client/index.js
 ```
 
 客户端产物是 `window.__ModuleLoader__.load` 工厂。编译、发布和源码联调见 [docs/publish-install.md](docs/publish-install.md)。协议 MIT。

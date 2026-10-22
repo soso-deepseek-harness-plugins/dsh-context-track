@@ -13,16 +13,16 @@
   },
   "type": "module",
   "icon": "./icon.svg",
-  "main": "./dist/host/index.js",
-  "types": "./dist/host/index.d.ts",
+  "main": "./lib/host/index.js",
+  "types": "./lib/host/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/host/index.d.ts",
-      "default": "./dist/host/index.js"
+      "types": "./lib/host/index.d.ts",
+      "default": "./lib/host/index.js"
     },
     "./client": {
-      "types": "./dist/client/index.d.ts",
-      "default": "./dist/client/index.js"
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client/index.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json",
@@ -32,9 +32,9 @@
     "icon.svg",
     "cordis.patch.yml",
     "locale/*.json",
-    "dist/**/*.js",
-    "dist/**/*.js.map",
-    "dist/**/*.d.ts"
+    "lib/**/*.js",
+    "lib/**/*.js.map",
+    "lib/**/*.d.ts"
   ],
   "packageManager": "pnpm@11.28.5",
   "engines": {
@@ -60,7 +60,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsdown",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf lib",
     "prepublishOnly": "pnpm run build",
     "test": "vitest run"
   },
