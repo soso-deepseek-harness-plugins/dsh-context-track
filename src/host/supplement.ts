@@ -20,7 +20,7 @@ export interface StreamCall {
 }
 
 export interface SupplementOptions {
-  /** Profile directory `dsh-track/`, or undefined when the host has no profile yet. */
+  /** Profile directory `dsh-context-track/`, or undefined when the host has no profile yet. */
   directory: () => string | undefined
   maxPending?: number
   appendFile?: (path: string, data: string) => Promise<void>

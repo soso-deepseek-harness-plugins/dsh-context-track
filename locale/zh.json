@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "跟踪",
+    "title": "上下文链路追踪 (dsh-context-track)",
     "description": "可展开的模型调用、工具、子会话、标题、压缩和检索树。"
   }
 }

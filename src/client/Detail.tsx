@@ -10,8 +10,8 @@ export interface DetailProps {
 
 /** Render one fetched node, or the prompt shown before a selection. */
 export function Detail({ detail, t }: DetailProps): ReactNode {
-  if (detail === undefined) return <p className="dsh-track-muted">{t('hint')}</p>
-  if (isMissing(detail)) return <p className="dsh-track-muted">{t('missing')}</p>
+  if (detail === undefined) return <p className="dsh-context-track-muted">{t('hint')}</p>
+  if (isMissing(detail)) return <p className="dsh-context-track-muted">{t('missing')}</p>
   if (detail.kind === 'attempt' || detail.kind === 'step') {
     return (
       <div>
@@ -95,9 +95,9 @@ export function Detail({ detail, t }: DetailProps): ReactNode {
 
 function Block({ title, value }: { title: string; value: unknown }): ReactNode {
   return (
-    <section className="dsh-track-block">
+    <section className="dsh-context-track-block">
       <h3>{title}</h3>
-      <pre className="dsh-track-pre">{formatValue(value)}</pre>
+      <pre className="dsh-context-track-pre">{formatValue(value)}</pre>
     </section>
   )
 }

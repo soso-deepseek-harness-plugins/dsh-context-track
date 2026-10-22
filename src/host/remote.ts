@@ -224,11 +224,11 @@ function unlinkedDetail(node: UnlinkedNode): UnlinkedDetail {
 function directoryOf(ctx: Context): string | undefined {
   try {
     const profile = (ctx as Context & { profileContext?: { dir?: string } }).profileContext?.dir
-    if (typeof profile === 'string' && profile.length > 0) return join(profile, 'dsh-track')
+    if (typeof profile === 'string' && profile.length > 0) return join(profile, 'dsh-context-track')
   } catch {
     // profileContext is absent outside a profile launch.
   }
   const home = process.env.DSH_HOME
   if (home === undefined || home.length === 0) return undefined
-  return join(home, 'profiles', process.env.DSH_PROFILE ?? 'default', 'dsh-track')
+  return join(home, 'profiles', process.env.DSH_PROFILE ?? 'default', 'dsh-context-track')
 }

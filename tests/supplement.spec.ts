@@ -10,7 +10,7 @@ import {
 function memory() {
   const files = new Map<string, string>()
   const supplement = new Supplement({
-    directory: () => '/profiles/default/dsh-track',
+    directory: () => '/profiles/default/dsh-context-track',
     maxPending: 256,
     mkdir: async () => undefined,
     appendFile: async (path, data) => { files.set(path, (files.get(path) ?? '') + data) },
@@ -56,7 +56,7 @@ describe('supplement', () => {
 
   it('returns next immediately when capture throws or the disk write never settles', () => {
     const supplement = new Supplement({
-      directory: () => '/profiles/default/dsh-track',
+      directory: () => '/profiles/default/dsh-context-track',
       mkdir: async () => undefined,
       appendFile: () => new Promise(() => undefined),
       readFile: async () => { throw new Error('missing') },
@@ -74,7 +74,7 @@ describe('supplement', () => {
 
   it('drops a line when the queue is full and forgets a line whose write fails', async () => {
     const dropped = new Supplement({
-      directory: () => '/profiles/default/dsh-track',
+      directory: () => '/profiles/default/dsh-context-track',
       maxPending: 1,
       mkdir: async () => undefined,
       appendFile: async () => undefined,
@@ -87,7 +87,7 @@ describe('supplement', () => {
     expect(await dropped.lines('sess')).toEqual([{ purpose: 'compaction', text: 'first' }])
 
     const failed = new Supplement({
-      directory: () => '/profiles/default/dsh-track',
+      directory: () => '/profiles/default/dsh-context-track',
       mkdir: async () => undefined,
       appendFile: async () => { throw new Error('disk') },
       readFile: async () => { throw new Error('missing') },
@@ -101,7 +101,7 @@ describe('supplement', () => {
   it('pairs file line n with compaction n after a restart', async () => {
     const files = new Map<string, string>()
     const io = {
-      directory: () => '/profiles/default/dsh-track',
+      directory: () => '/profiles/default/dsh-context-track',
       mkdir: async () => undefined,
       appendFile: async (path: string, data: string) => { files.set(path, (files.get(path) ?? '') + data) },
       readFile: async (path: string) => {

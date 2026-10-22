@@ -14,6 +14,7 @@ const dictionaries = { zh, en }
 
 function page(list: ListState, getNode: TracePageProps['getNode'], language: 'zh' | 'en' = 'zh'): TracePageProps {
   return {
+    sessionId: list.ids[0],
     useSessions: selector => selector(list as never),
     t: (key: TrackKey) => dictionaries[language][key],
     getNode,
@@ -95,7 +96,7 @@ describe('trace panel', () => {
     roots.length = 0
     document.body.innerHTML = ''
     for (const node of document.head.querySelectorAll('style')) {
-      if (node.dataset.dshTrack === undefined) node.remove()
+      if (node.dataset.dshContextTrack === undefined) node.remove()
     }
   })
 
@@ -124,7 +125,7 @@ describe('trace panel', () => {
     document.head.appendChild(userAgent)
     const view = mount(page(session(finishedTurn), vi.fn()))
     roots.push(view.root)
-    const panel = view.host.querySelector('.dsh-track') as HTMLElement
+    const panel = view.host.querySelector('.dsh-context-track') as HTMLElement
     panel.style.setProperty('--dsw-alias-label-primary', 'rgb(240, 240, 240)')
     const label = buttons(view.host, '回合 1')[0]
     expect(label).toBeDefined()
@@ -165,7 +166,7 @@ describe('trace panel', () => {
     await click(buttons(view.host, '回合 1')[0])
     expect(view.host.textContent).toContain('回合 1')
     expect(view.host.textContent).toContain(zh.missing)
-    expect(view.host.querySelector('.dsh-track-tree')).not.toBeNull()
+    expect(view.host.querySelector('.dsh-context-track-tree')).not.toBeNull()
   })
 
   it('scrolls the detail pane when the node body is taller than the panel', async () => {
@@ -180,14 +181,14 @@ describe('trace panel', () => {
     await click(buttons(view.host, zh.expand)[0])
     await click(buttons(view.host, '步骤 1')[0])
     await act(async () => { await Promise.resolve() })
-    const detail = view.host.querySelector('.dsh-track-detail') as HTMLElement
-    const tree = view.host.querySelector('.dsh-track-tree') as HTMLElement
-    const track = view.host.querySelector('.dsh-track') as HTMLElement
+    const detail = view.host.querySelector('.dsh-context-track-detail') as HTMLElement
+    const tree = view.host.querySelector('.dsh-context-track-tree') as HTMLElement
+    const track = view.host.querySelector('.dsh-context-track') as HTMLElement
     expect(getComputedStyle(track).minHeight).not.toBe('auto')
     expect(getComputedStyle(detail).minHeight).not.toBe('auto')
     expect(getComputedStyle(tree).minHeight).not.toBe('auto')
-    expect(traceCss).toMatch(/\.dsh-track \{[^}]*overflow:\s*hidden/)
-    expect(traceCss).toMatch(/\.dsh-track-detail \{[^}]*overflow:\s*auto/)
+    expect(traceCss).toMatch(/\.dsh-context-track \{[^}]*overflow:\s*hidden/)
+    expect(traceCss).toMatch(/\.dsh-context-track-detail \{[^}]*overflow:\s*auto/)
     expect(view.host.textContent).toContain('回合 1')
     expect(view.host.textContent).toContain('tail-marker')
   })

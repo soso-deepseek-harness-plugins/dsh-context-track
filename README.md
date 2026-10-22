@@ -1,12 +1,17 @@
-# dsh-track
+# dsh-context-track
 
-DeepSeek Harness 的会话跟踪插件。它把一次 agent 会话收成一棵可展开的树：回合、模型步骤、工具、子会话，以及标题生成、压缩摘要、检索。点开节点可以看到该次调用的输入和元数据。
+DeepSeek Harness 的上下文链路追踪插件。它把一次 agent 会话收成一棵可展开的树：回合、模型步骤、工具、子会话，以及标题生成、压缩摘要、检索。点开节点可以看到该次调用的输入和元数据。
 
 插件只做记录。模型步骤的正文留在宿主的会话日志里，点开时按序号重放。记录失败不影响 agent loop。
 
 ## 界面
 
-侧栏入口是「跟踪」。它打开同名主面板，并跟随布局里的当前会话。左边是树，右边是详情。没有打开的会话时显示空状态。
+入口和 [dsh-context](https://github.com/bowenliang123/dsh-context) 一样，有两处，显示名称都是「上下文链路追踪」：
+
+- 会话页签，排在「上下文」后面。
+- 右侧栏引导页。点开后，同一份面板停在当前会话旁边。
+
+两处都绑定当前会话。左边是树，右边是详情。没有打开的会话时，页签不出现；面板缺少会话时显示空状态。
 
 浏览器和 Desktop 共用这一套 Web 界面，读同一个 Host。窗口变窄时树和详情仍可滚动。
 
@@ -48,10 +53,10 @@ Session
 旁路调用的输入输出优先读会话事件。压缩请求在被压缩的消息后面还会加一条指令，这条指令不在会话日志里。插件把它追加到 profile 下的增量文件：
 
 ```
-<profile>/dsh-track/<sessionId>.jsonl
+<profile>/dsh-context-track/<sessionId>.jsonl
 ```
 
-profile 目录来自宿主的 `profileContext`。没有这项上下文时，使用 `$DSH_HOME/profiles/$DSH_PROFILE/dsh-track/`，`DSH_PROFILE` 缺省为 `default`。`DSH_HOME` 也没有时不写文件。一行一条：
+profile 目录来自宿主的 `profileContext`。没有这项上下文时，使用 `$DSH_HOME/profiles/$DSH_PROFILE/dsh-context-track/`，`DSH_PROFILE` 缺省为 `default`。`DSH_HOME` 也没有时不写文件。一行一条：
 
 ```json
 {"purpose":"compaction","text":"<指令原文>"}
@@ -71,16 +76,16 @@ profile 目录来自宿主的 `profileContext`。没有这项上下文时，使�
 
 ## 接入
 
-`cordis.patch.yml` 把 Host 插件 `dsh-track` 插进宿主。`package.json` 的 `dsh.client` 把 Web 客户端装进浏览器和 Desktop，并声明这些客户端包：
+`cordis.patch.yml` 把 Host 插件 `dsh-context-track` 插进宿主。`package.json` 的 `dsh.client` 把 Web 客户端装进浏览器和 Desktop，并声明这些客户端包：
 
 - `@deepseek-ai/dsh-client-locale`
-- `@deepseek-ai/dsh-client-ui-layout`
-- `@deepseek-ai/dsh-client-ui-sidebar`
+- `@deepseek-ai/dsh-client-ui-conversation`
+- `@deepseek-ai/dsh-client-ui-sidebar-right`
 - `@deepseek-ai/dsh-client-ui-renderer`
 - `@deepseek-ai/dsh-client-ui-session`
 - `@deepseek-ai/dsh-api-gateway`
 
-侧栏入口和主面板的 id 都是 `trace`。Client 自己的 Cordis 依赖是 `slots`、`locale`、`layout`、`remote`。它在启动时挂上 `remote.track`，第三方插件没有别的装配会提供这个命名空间。插件的 `inject` 不能再写 `remote.track`，否则会一直等一个只有自己才会挂上的服务。读取它的是 `apply` 里 `inject(['remote.track'])` 出来的子上下文；Cordis 不允许从没有注入这项服务的上下文上读它，那样点节点会抛错，面板被错误边界清掉。
+会话页签 id 是 `context-track`。右侧栏 tab 的 id 和 kind 都是 `dsh-context-track`，引导页排在 dsh-context 的「上下文」后面。Client 自己的 Cordis 依赖是 `slots`、`locale`、`remote`。右侧栏注册放在 `inject(['sidebarRightTabs'])` 里，宿主没有这项服务时不会卡住会话页签。它在启动时挂上 `remote.track`，第三方插件没有别的装配会提供这个命名空间。插件的 `inject` 不能再写 `remote.track`，否则会一直等一个只有自己才会挂上的服务。读取它的是 `apply` 里 `inject(['remote.track'])` 出来的子上下文；Cordis 不允许从没有注入这项服务的上下文上读它，那样点节点会抛错，面板被错误边界清掉。
 
 Host 注册三件事：`track` 投影、旁路 `llm/stream` 监听、Remote 方法 `track/getNode`。Client 只消费投影推过来的索引，点开节点时再调 `getNode`。包入口 `.` 是 Host，`./client` 是 Web 客户端。
 
@@ -112,7 +117,7 @@ src/
 │   ├── supplement.ts    压缩指令的内存队列和 JSONL 追加
 │   └── remote.ts        getNode
 └── client/
-    ├── index.ts         侧栏入口和主面板
+    ├── index.ts         会话页签和右侧栏入口
     ├── TracePage.tsx    左右分栏
     ├── Tree.tsx         展开、收起、选中
     ├── Detail.tsx       元数据、消息、工具、输出
@@ -139,13 +144,13 @@ pnpm version 0.1.0 --no-git-tag-version
 pnpm publish --access public --no-git-checks
 
 # 别人装进 profile
-dsh plugin --profile <profile> add dsh-track
+dsh plugin --profile <profile> add dsh-context-track
 
 # 本机 harness 源码联调（无全局 dsh；先 build 本插件；只写 $DSH_HOME）
 cd /path/to/deepseek-harness
-pnpm dsh plugin --profile web add /path/to/dsh-track
+pnpm dsh plugin --profile web add /path/to/dsh-context-track
 pnpm dsh web
 # Desktop：退出应用后
-#   DSH_HOME=/tmp/dsh-desktop-dev pnpm dsh plugin --profile desktop add /path/to/dsh-track
+#   DSH_HOME=/tmp/dsh-desktop-dev pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
 #   DSH_HOME=/tmp/dsh-desktop-dev pnpm run start:desktop
 ```

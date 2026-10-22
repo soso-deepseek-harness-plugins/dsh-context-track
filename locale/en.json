@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Trace",
+    "title": "Context Trace (dsh-context-track)",
     "description": "Expandable tree of model calls, tools, subagents, titles, compaction, and search."
   }
 }

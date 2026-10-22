@@ -1,6 +1,6 @@
 # 编译 · 发布 · 安装 · 卸载
 
-包名 **`dsh-track`**。发布物是已构建的 `dist/`（外加 `icon.svg`、`cordis.patch.yml`、`locale/`）。安装方**不必**再 build。
+包名 **`dsh-context-track`**。发布物是已构建的 `dist/`（外加 `icon.svg`、`cordis.patch.yml`、`locale/`）。安装方**不必**再 build。
 
 | 场景 | 章节 |
 | --- | --- |
@@ -31,15 +31,15 @@ pnpm run clean          # 删掉 dist/
 
 ```bash
 pnpm run build && pnpm pack
-tar -tzf dsh-track-*.tgz | head -40
+tar -tzf dsh-context-track-*.tgz | head -40
 ```
 
 清单里须有 `package/dist/...`。只有 `package.json`、没有 `dist/` → `files` 配错了。
 
 ```bash
-dsh plugin --profile demo add ./dsh-track-<version>.tgz
-dsh --profile demo --dump-config    # 应能看到 dsh-track
-dsh plugin --profile demo remove dsh-track
+dsh plugin --profile demo add ./dsh-context-track-<version>.tgz
+dsh --profile demo --dump-config    # 应能看到 dsh-context-track
+dsh plugin --profile demo remove dsh-context-track
 ```
 
 ---
@@ -49,7 +49,7 @@ dsh plugin --profile demo remove dsh-track
 同一版本只能发一次。升版本后再发：
 
 ```bash
-npm view dsh-track version          # 404 = 名字可用
+npm view dsh-context-track version          # 404 = 名字可用
 pnpm version 0.1.0 --no-git-tag-version
 pnpm publish --dry-run --no-git-checks
 pnpm publish --access public --no-git-checks
@@ -72,7 +72,7 @@ pnpm publish --tag beta --access public --no-git-checks
 ```bash
 pnpm test && pnpm run build
 pnpm version patch --no-git-tag-version
-pnpm pack && tar -tzf dsh-track-*.tgz | head -20
+pnpm pack && tar -tzf dsh-context-track-*.tgz | head -20
 pnpm publish --access public --no-git-checks
 ```
 
@@ -81,7 +81,7 @@ Git 直装会拉源码且不自动 build，一般不如 npm / tgz。
 
 </details>
 
-发完核对：`npm view dsh-track`，或空目录 `pnpm add dsh-track`。
+发完核对：`npm view dsh-context-track`，或空目录 `pnpm add dsh-context-track`。
 
 ---
 
@@ -90,16 +90,16 @@ Git 直装会拉源码且不自动 build，一般不如 npm / tgz。
 装的是已构建包，**不用**再跑本仓库的 build。
 
 ```bash
-dsh plugin --profile <profile> add dsh-track
-# 或指定版本：dsh-track@0.1.0 / dsh-track@beta
+dsh plugin --profile <profile> add dsh-context-track
+# 或指定版本：dsh-context-track@0.1.0 / dsh-context-track@beta
 
 dsh web                              # 同 dsh --profile web
 # 或其它 profile：dsh --profile <profile>
 ```
 
-侧栏出现「跟踪」（面板 id：`trace`）。打开会话即可看树和详情。
+打开会话后，会话页签和右侧栏引导页出现「上下文链路追踪」。点开即可看树和详情。
 
-> 单独 `pnpm add dsh-track` 只进 `node_modules`，**不会**启用 Harness 插件层。要用侧栏「跟踪」，走上面的 `dsh plugin add`。
+> 单独 `pnpm add dsh-context-track` 只进 `node_modules`，**不会**启用 Harness 插件层。要用「上下文链路追踪」，走上面的 `dsh plugin add`。
 
 ---
 
@@ -108,13 +108,13 @@ dsh web                              # 同 dsh --profile web
 从指定 profile 卸掉 Harness 插件层（不是 `pnpm remove`）：
 
 ```bash
-dsh plugin --profile <profile> remove dsh-track
+dsh plugin --profile <profile> remove dsh-context-track
 ```
 
 仅有 harness 源码、无全局 `dsh` 时，在 harness 根目录：
 
 ```bash
-pnpm dsh plugin --profile <profile> remove dsh-track
+pnpm dsh plugin --profile <profile> remove dsh-context-track
 # Web 例：   --profile web
 # Desktop：  --profile desktop
 ```
@@ -123,13 +123,13 @@ pnpm dsh plugin --profile <profile> remove dsh-track
 | --- | --- |
 | Desktop / 应用在跑 | 先**完全退出**再 `remove`（与 `add` 一样，profile 有写锁） |
 | `DSH_HOME` | 与当初 `add`、启动时用的目录一致，否则卸的是另一个 home |
-| 卸完后 | Web：重启或刷新；Desktop：重开应用。侧栏「跟踪」应消失 |
-| 核对 | `dsh --profile <profile> --dump-config`（或 `pnpm dsh …`）里不应再有 `dsh-track` |
+| 卸完后 | Web：重启或刷新；Desktop：重开应用。「上下文链路追踪」页签和右侧栏入口应消失 |
+| 核对 | `dsh --profile <profile> --dump-config`（或 `pnpm dsh …`）里不应再有 `dsh-context-track` |
 
 `remove` 只卸插件安装与配置，**不会**删会话日志，也不会清 profile 下本插件写过的旁路文件：
 
 ```text
-$DSH_HOME/profiles/<profile>/dsh-track/
+$DSH_HOME/profiles/<profile>/dsh-context-track/
 ```
 
 若要一并清掉压缩指令等增量 JSONL，手动删该目录即可。
@@ -150,7 +150,7 @@ $DSH_HOME/profiles/<profile>/dsh-track/
 
 | 角色 | 路径 |
 | --- | --- |
-| 本插件 | `/path/to/dsh-track` |
+| 本插件 | `/path/to/dsh-context-track` |
 | harness | `/path/to/deepseek-harness` |
 
 下文凡写 `pnpm dsh`，都先 `cd /path/to/deepseek-harness`。
@@ -159,13 +159,13 @@ $DSH_HOME/profiles/<profile>/dsh-track/
 
 ```bash
 cd /path/to/deepseek-harness && pnpm install && pnpm run build
-cd /path/to/dsh-track        && pnpm install && pnpm run build   # 必须有 dist/
+cd /path/to/dsh-context-track        && pnpm install && pnpm run build   # 必须有 dist/
 ```
 
 日常改插件：
 
 ```bash
-cd /path/to/dsh-track
+cd /path/to/dsh-context-track
 pnpm test && pnpm run build
 # 再重启 Web，或退出后重开 Desktop
 ```
@@ -178,12 +178,12 @@ profile 名自定，这里用 `web`。插件写进普通 `$DSH_HOME`（默认 `~
 
 ```bash
 cd /path/to/deepseek-harness
-pnpm dsh plugin --profile web add /path/to/dsh-track
+pnpm dsh plugin --profile web add /path/to/dsh-context-track
 pnpm dsh --profile web --dump-config
 pnpm dsh web                         # 同 pnpm dsh --profile web；勿再写 --profile
 ```
 
-浏览器打开终端地址（常见 `http://127.0.0.1:3080`），侧栏应有「跟踪」。
+浏览器打开终端地址（常见 `http://127.0.0.1:3080`），打开会话后应有「上下文链路追踪」页签，右侧栏引导页也有同名入口。
 
 ### 3. Desktop
 
@@ -201,8 +201,8 @@ cd /path/to/deepseek-harness
 pnpm run start:desktop                  # 首次初始化 desktop profile
 # 完全退出后再装：
 
-pnpm dsh plugin --profile desktop add /path/to/dsh-track
-pnpm run start:desktop                  # 重开后侧栏应有「跟踪」
+pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
+pnpm run start:desktop                  # 重开并打开会话后应有「上下文链路追踪」
 ```
 
 <details>
@@ -213,7 +213,7 @@ pnpm run start:desktop                  # 重开后侧栏应有「跟踪」
 ```bash
 export DSH_HOME=/path/to/deepseek-harness/apps/desktop/.desktop-build/development/home
 cd /path/to/deepseek-harness
-pnpm dsh plugin --profile desktop add /path/to/dsh-track
+pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
 ```
 
 - `dev:desktop` 会先构建再启动；已有产物时用 `start:desktop` 更快
@@ -225,24 +225,24 @@ pnpm dsh plugin --profile desktop add /path/to/dsh-track
 ### 4. 用 tgz 验收
 
 ```bash
-cd /path/to/dsh-track && pnpm run build && pnpm pack
+cd /path/to/dsh-context-track && pnpm run build && pnpm pack
 
 cd /path/to/deepseek-harness
 # Web
-pnpm dsh plugin --profile web add /path/to/dsh-track/dsh-track-<version>.tgz
+pnpm dsh plugin --profile web add /path/to/dsh-context-track/dsh-context-track-<version>.tgz
 
 # Desktop（DSH_HOME 与启动一致；应用须已退出）
-pnpm dsh plugin --profile desktop add /path/to/dsh-track/dsh-track-<version>.tgz
+pnpm dsh plugin --profile desktop add /path/to/dsh-context-track/dsh-context-track-<version>.tgz
 ```
 
 改代码后重新 pack + add。恢复开发链：
 
 ```bash
-pnpm dsh plugin --profile web remove dsh-track
-pnpm dsh plugin --profile web add /path/to/dsh-track
+pnpm dsh plugin --profile web remove dsh-context-track
+pnpm dsh plugin --profile web add /path/to/dsh-context-track
 
-pnpm dsh plugin --profile desktop remove dsh-track
-pnpm dsh plugin --profile desktop add /path/to/dsh-track
+pnpm dsh plugin --profile desktop remove dsh-context-track
+pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
 ```
 
 <details>
@@ -251,16 +251,16 @@ pnpm dsh plugin --profile desktop add /path/to/dsh-track
 不写 profile；patch 放在**本插件仓库**。Desktop 请用上面的 `plugin add`。
 
 ```yaml
-# /path/to/dsh-track/dev.patch.yml
+# /path/to/dsh-context-track/dev.patch.yml
 - insert:
-    - id: dsh-track
-      name: '/path/to/dsh-track/dist/host/index.js'
+    - id: dsh-context-track
+      name: '/path/to/dsh-context-track/dist/host/index.js'
 ```
 
 ```bash
-cd /path/to/dsh-track && pnpm run build
+cd /path/to/dsh-context-track && pnpm run build
 cd /path/to/deepseek-harness
-pnpm dsh web --patch /path/to/dsh-track/dev.patch.yml
+pnpm dsh web --patch /path/to/dsh-context-track/dev.patch.yml
 ```
 
 需要完整侧栏 Client 时，仍优先 `pnpm dsh plugin add`。
@@ -271,9 +271,9 @@ pnpm dsh web --patch /path/to/dsh-track/dev.patch.yml
 
 | 目的 | Web | Desktop |
 | --- | --- | --- |
-| 日常改插件 | `plugin add /path/to/dsh-track` | 退出 → `plugin add …` → `start:desktop` |
+| 日常改插件 | `plugin add /path/to/dsh-context-track` | 退出 → `plugin add …` → `start:desktop` |
 | 验收打包 | 换成 `…/*.tgz` | 同上 |
-| 对照已发布版 | `add dsh-track@<版本>` | 同上（`DSH_HOME` 与启动一致） |
+| 对照已发布版 | `add dsh-context-track@<版本>` | 同上（`DSH_HOME` 与启动一致） |
 
 插件只进 `$DSH_HOME`，不改 harness 源码。
 
@@ -287,10 +287,10 @@ pnpm dsh web --patch /path/to/dsh-track/dev.patch.yml
 | publish 403 / 409 | 登录、换包名，或升版本 |
 | publish 404 / 推包失败 | 加 `--registry=https://registry.npmjs.org/` |
 | 装上了但加载失败 | 先 `pnpm run build`，再用 `tar -tzf` 确认 tgz 有 `dist/` |
-| Web / Desktop 没有「跟踪」 | 确认编过 `dist/client/index.js`（工厂包，不是裸 ESM），且用对应 profile 的 `plugin add` 整包装入 |
+| Web / Desktop 没有「上下文链路追踪」 | 确认编过 `dist/client/index.js`（工厂包，不是裸 ESM），且用对应 profile 的 `plugin add` 整包装入。页签只在打开会话后出现 |
 | Desktop 装上了但界面没有 | 确认 `DSH_HOME` 与启动一致；装完后重开应用 |
 | Desktop `plugin add` 失败 | 先 `start:desktop` 开一次并完全退出，再在 harness 根目录 `pnpm dsh plugin …` |
-| `remove` 后侧栏仍有「跟踪」 | 确认卸的是同一 `DSH_HOME` / profile；Web 重启或刷新，Desktop 重开 |
+| `remove` 后仍有「上下文链路追踪」 | 确认卸的是同一 `DSH_HOME` / profile；Web 重启或刷新，Desktop 重开 |
 | `plugin remove` 失败 | 应用须已退出；Desktop 与装插件时用同一 `DSH_HOME` |
 | link 后改代码没变化 | 插件侧重新 `build`；Web 刷新或重启；Desktop 退出后重开 |
 | 安装被 `engines.dsh` 拒绝 | 宿主需在 `>=0.2.0-0 <0.3.0` |

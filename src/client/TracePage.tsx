@@ -1,7 +1,8 @@
 /**
- * Trace panel. The main slot is not session-scoped, so the current session is
- * the list row retained by the main view. Detail refreshes when that session's
- * committed projection changes. It does not subscribe to the token stream.
+ * Context-trace panel. The conversation tab and the right sidebar are both
+ * session-scoped, so the current session is `sessionId`. Detail refreshes when
+ * that session's committed projection changes. It does not subscribe to the
+ * token stream. Child sessions are read from the session list.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -11,7 +12,6 @@ import type { NodeDetail } from '../shared/detail.js'
 import {
   defaultExpanded,
   emptyTrack,
-  mainSessionId,
   toggleExpanded,
   type TrackState,
 } from '../shared/model.js'
@@ -19,24 +19,26 @@ import '../shared/projection.js'
 import { Detail } from './Detail.js'
 import type { TrackKey } from './locales.js'
 import { ensureStyles } from './styles.js'
+import './slots.js'
 import { Tree } from './Tree.js'
 
 export interface TrackInject {
   getNode(sessionId: string, nodeId: string): Promise<RemoteResult<NodeDetail>>
 }
 
-export type TracePageProps = PropsRuntime<'main'> & PropsLocale<'dsh-track'> & TrackInject
+type SessionView = PropsRuntime<'conversation.view'>
+
+export type TracePageProps = Pick<SessionView, 'sessionId' | 'useSessions'> & PropsLocale<'dsh-context-track'> & TrackInject
 
 interface Selection {
   sessionId: string
   nodeId: string
 }
 
-/** Left tree and right detail for the session shown in the main column. */
-export function TracePage({ useSessions, t, getNode }: TracePageProps): ReactNode {
+/** Left tree and right detail for the session this tab is bound to. */
+export function TracePage({ sessionId, useSessions, t, getNode }: TracePageProps): ReactNode {
   ensureStyles()
   const list = useSessions(state => state)
-  const sessionId = mainSessionId(list.byId)
   const track = sessionId === undefined ? undefined : readTrack(list.projectionsBySession, sessionId)
   const [open, setOpen] = useState<Readonly<Record<string, boolean>>>({})
   const [selection, setSelection] = useState<Selection | undefined>(undefined)
@@ -67,12 +69,12 @@ export function TracePage({ useSessions, t, getNode }: TracePageProps): ReactNod
     return () => { cancelled = true }
   }, [sessionId, selection, selectedTrack, getNode])
 
-  if (sessionId === undefined) return <div className="dsh-track"><p className="dsh-track-empty">{t('empty')}</p></div>
+  if (sessionId === undefined) return <div className="dsh-context-track"><p className="dsh-context-track-empty">{t('empty')}</p></div>
 
   const translate = (key: TrackKey): string => t(key)
   return (
-    <div className="dsh-track">
-      <div className="dsh-track-tree">
+    <div className="dsh-context-track">
+      <div className="dsh-context-track-tree">
         <Tree
           sessionId={sessionId}
           track={track ?? emptyTrack()}
@@ -86,7 +88,7 @@ export function TracePage({ useSessions, t, getNode }: TracePageProps): ReactNod
           t={translate}
         />
       </div>
-      <div className="dsh-track-detail">
+      <div className="dsh-context-track-detail">
         <Detail detail={selection === undefined ? undefined : detail} t={translate} />
       </div>
     </div>

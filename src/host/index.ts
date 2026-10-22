@@ -12,7 +12,7 @@ import { applyTrack } from './fold.js'
 import { listenLlmStream } from './supplement.js'
 import { TrackRemote } from './remote.js'
 
-export const name = 'dsh-track'
+export const name = 'dsh-context-track'
 
 export const inject = ['sessionProjections', 'sessions'] as const
 

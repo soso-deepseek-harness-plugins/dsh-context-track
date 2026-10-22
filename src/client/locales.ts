@@ -1,11 +1,12 @@
 /** Trace panel copy. Chinese is the key source of truth. */
 
 export const zh = {
-  panel: '跟踪',
+  panel: '上下文链路追踪',
+  guide: '查看回合、模型步骤、工具、子会话，以及标题、压缩和检索。',
   empty: '没有打开的会话',
   hint: '点开左侧节点查看这次调用的输入和输出',
   missing: '这个节点已经不在会话里',
-  unavailable: '子会话的跟踪还不可用',
+  unavailable: '子会话的上下文链路还不可用',
   turn: '回合 {n}',
   step: '步骤 {n}',
   attempt: '尝试 {n}',
@@ -39,11 +40,12 @@ export const zh = {
 } as const
 
 export const en: { [Key in keyof typeof zh]: string } = {
-  panel: 'Trace',
+  panel: 'Context Trace',
+  guide: 'Inspect turns, model steps, tools, subagents, titles, compaction, and search.',
   empty: 'No open session',
   hint: 'Select a node to see that call’s input and output',
   missing: 'This node is no longer in the session',
-  unavailable: 'This subagent’s trace is not available yet',
+  unavailable: 'This subagent’s context trace is not available yet',
   turn: 'Turn {n}',
   step: 'Step {n}',
   attempt: 'Attempt {n}',
@@ -78,4 +80,4 @@ export const en: { [Key in keyof typeof zh]: string } = {
 
 export type TrackKey = keyof typeof zh
 
-export const NS = 'dsh-track'
+export const NS = 'dsh-context-track'

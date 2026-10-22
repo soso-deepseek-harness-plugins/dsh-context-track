@@ -27,7 +27,7 @@ function unwrapExports(exports: unknown): Record<string, unknown> {
 }
 
 describe('web client bundle', () => {
-  it('registers a classic-script factory for dsh-track', () => {
+  it('registers a classic-script factory for dsh-context-track', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
       exports: { './client': { default: string } }
     }
@@ -43,14 +43,14 @@ describe('web client bundle', () => {
       },
     }, { filename: clientPath })
 
-    expect(registrations.map(registration => registration.id)).toEqual(['dsh-track'])
+    expect(registrations.map(registration => registration.id)).toEqual(['dsh-context-track'])
     const plugin = unwrapExports(registrations[0]?.factory(specifier => {
       required.push(specifier)
       if (specifier === 'react' || specifier === 'react/jsx-runtime') return {}
-      throw new Error(`client bundle required ${specifier}, which the web module table does not provide to dsh-track`)
+      throw new Error(`client bundle required ${specifier}, which the web module table does not provide to dsh-context-track`)
     }))
     expect(typeof plugin.apply).toBe('function')
-    expect(plugin.inject).toEqual(['slots', 'locale', 'layout', 'remote'])
+    expect(plugin.inject).toEqual(['slots', 'locale', 'remote'])
     expect(required.filter(specifier => specifier !== 'react' && specifier !== 'react/jsx-runtime')).toEqual([])
     expect(required).toContain('react')
     expect(required).toContain('react/jsx-runtime')

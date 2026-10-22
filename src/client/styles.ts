@@ -1,9 +1,10 @@
 /**
- * Panel chrome. Colors come from the host alias tokens. The leading padding
- * follows the frame's macOS window-control clearance.
+ * Panel chrome. Colors come from the host alias tokens. The conversation tab
+ * and the right sidebar own the surrounding frame, so this panel does not add
+ * window-control clearance of its own.
  */
 export const traceCss = `
-.dsh-track {
+.dsh-context-track {
   box-sizing: border-box;
   display: flex;
   flex: 1 1 auto;
@@ -13,12 +14,11 @@ export const traceCss = `
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  padding-inline-start: var(--dsh-frame-leading-clearance, 0px);
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
 }
-.dsh-track-tree,
-.dsh-track-detail {
+.dsh-context-track-tree,
+.dsh-context-track-detail {
   box-sizing: border-box;
   flex: 1 1 16rem;
   min-width: 0;
@@ -27,14 +27,14 @@ export const traceCss = `
   overflow: auto;
   padding: 0.75rem;
 }
-.dsh-track-detail {
+.dsh-context-track-detail {
   background: var(--dsw-alias-bg-layer-2);
 }
-.dsh-track-empty,
-.dsh-track-muted {
+.dsh-context-track-empty,
+.dsh-context-track-muted {
   color: var(--dsw-alias-label-secondary);
 }
-.dsh-track button {
+.dsh-context-track button {
   margin: 0;
   padding: 0;
   font: inherit;
@@ -44,7 +44,7 @@ export const traceCss = `
   border: 0;
   cursor: pointer;
 }
-.dsh-track-row {
+.dsh-context-track-row {
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -53,33 +53,33 @@ export const traceCss = `
   text-align: start;
   color: inherit;
 }
-.dsh-track-row[aria-current="true"] {
+.dsh-context-track-row[aria-current="true"] {
   background: var(--dsw-alias-interactive-bg-hover);
 }
-.dsh-track-label {
+.dsh-context-track-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dsh-track-status-ok { color: var(--dsw-alias-state-success-primary); }
-.dsh-track-status-error,
-.dsh-track-status-aborted { color: var(--dsw-alias-state-error-primary); }
-.dsh-track-status-running { color: var(--dsw-alias-label-tertiary); }
-.dsh-track-children {
+.dsh-context-track-status-ok { color: var(--dsw-alias-state-success-primary); }
+.dsh-context-track-status-error,
+.dsh-context-track-status-aborted { color: var(--dsw-alias-state-error-primary); }
+.dsh-context-track-status-running { color: var(--dsw-alias-label-tertiary); }
+.dsh-context-track-children {
   margin-inline-start: 0.75rem;
   border-inline-start: 1px solid var(--dsw-alias-border-l2);
 }
-.dsh-track-block {
+.dsh-context-track-block {
   margin: 0 0 0.75rem;
 }
-.dsh-track-block h3 {
+.dsh-context-track-block h3 {
   margin: 0 0 0.25rem;
   color: var(--dsw-alias-label-secondary);
   font-size: 0.75rem;
   font-weight: 600;
 }
-.dsh-track-pre {
+.dsh-context-track-pre {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -92,12 +92,12 @@ let installed = false
 /** Inject the panel stylesheet once. Safe to call during render. */
 export function ensureStyles(): void {
   if (installed || typeof document === 'undefined') return
-  if (document.querySelector('style[data-dsh-track]') !== null) {
+  if (document.querySelector('style[data-dsh-context-track]') !== null) {
     installed = true
     return
   }
   const style = document.createElement('style')
-  style.dataset.dshTrack = ''
+  style.dataset.dshContextTrack = ''
   style.textContent = traceCss
   document.head.appendChild(style)
   installed = true

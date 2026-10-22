@@ -170,11 +170,6 @@ export function isSubagentOrigin(header: { parentSession?: string; origin?: stri
   return header.origin === 'subagent' && typeof header.parentSession === 'string' && header.parentSession.length > 0
 }
 
-/** The session shown in the main column, retained by `mainView`. */
-export function mainSessionId(byId: Readonly<Record<string, { id: string; retainedBy?: { mainView?: number } }>>): string | undefined {
-  return Object.values(byId).find(session => (session.retainedBy?.mainView ?? 0) > 0)?.id
-}
-
 /** Unfinished turns start open. Everything else starts closed. The choice stays in the component. */
 export function defaultExpanded(kind: string, status: NodeStatus): boolean {
   return kind === 'turn' && status === 'running'

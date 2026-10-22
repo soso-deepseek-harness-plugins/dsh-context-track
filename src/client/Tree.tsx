@@ -25,7 +25,7 @@ export interface TreeProps {
 /** Render one session's index, nesting a child session's own index under its tool. */
 export function Tree(props: TreeProps): ReactNode {
   const { track, t } = props
-  if (track === undefined) return <p className="dsh-track-muted">{t('unavailable')}</p>
+  if (track === undefined) return <p className="dsh-context-track-muted">{t('unavailable')}</p>
   return (
     <div>
       {track.root.map(node => (
@@ -58,7 +58,7 @@ function TurnRow({ node, ...props }: TreeProps & { node: Extract<RootNode, { kin
         onSelect={() => { props.onSelect(props.sessionId, node.id) }}
       />
       {expanded ? (
-        <div className="dsh-track-children">
+        <div className="dsh-context-track-children">
           {node.items.map(item => (
             <ItemRow key={item.id} item={item} {...props} />
           ))}
@@ -93,7 +93,7 @@ function StepRow({ node, ...props }: TreeProps & { node: StepNode }): ReactNode 
         onSelect={() => { props.onSelect(props.sessionId, target) }}
       />
       {expanded ? (
-        <div className="dsh-track-children">
+        <div className="dsh-context-track-children">
           {node.attempts.map(attempt => (
             <Row
               key={attempt.id}
@@ -126,7 +126,7 @@ function StepRow({ node, ...props }: TreeProps & { node: StepNode }): ReactNode 
                   onSelect={() => { props.onSelect(props.sessionId, tool.id) }}
                 />
                 {childOpen && expandable && tool.childSessionId !== undefined ? (
-                  <div className="dsh-track-children">
+                  <div className="dsh-context-track-children">
                     <Tree {...props} sessionId={tool.childSessionId} track={childTrack} />
                   </div>
                 ) : null}
@@ -177,7 +177,7 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
         onSelect={() => { props.onSelect(props.sessionId, props.node.id) }}
       />
       {expanded && expandable ? (
-        <div className="dsh-track-children">
+        <div className="dsh-context-track-children">
           <Tree {...props} sessionId={props.node.childSessionId} track={childTrack} />
         </div>
       ) : null}
@@ -198,16 +198,16 @@ function Row({
   onSelect: () => void
 }): ReactNode {
   return (
-    <div className="dsh-track-row" aria-current={current ? 'true' : undefined}>
+    <div className="dsh-context-track-row" aria-current={current ? 'true' : undefined}>
       {canExpand ? (
         <button type="button" onClick={onToggle} aria-expanded={expanded}>
           {expanded ? t('collapse') : t('expand')}
         </button>
       ) : null}
-      <button type="button" className="dsh-track-label" onClick={onSelect}>
+      <button type="button" className="dsh-context-track-label" onClick={onSelect}>
         <span>{label}</span>
         {' '}
-        <span className={`dsh-track-status-${status}`}>{t(status)}</span>
+        <span className={`dsh-context-track-status-${status}`}>{t(status)}</span>
       </button>
     </div>
   )

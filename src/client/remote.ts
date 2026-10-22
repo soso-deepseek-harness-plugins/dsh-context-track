@@ -31,15 +31,15 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 
 const stringCodec = strictCodec('string', value => {
-  if (typeof value !== 'string') throw new Error('dsh-track: remote argument must be a string')
+  if (typeof value !== 'string') throw new Error('dsh-context-track: remote argument must be a string')
   return value
 })
 
 /** Mount this before reading `ctx.remote.track`. Nothing else publishes the namespace. */
 export const trackRemote: TypertRemoteContribution = {
-  package: 'dsh-track',
+  package: 'dsh-context-track',
   descriptors: [{
-    id: 'dsh-track#track/getNode',
+    id: 'dsh-context-track#track/getNode',
     service: 'track',
     namespace: 'track',
     method: 'getNode',
@@ -49,7 +49,7 @@ export const trackRemote: TypertRemoteContribution = {
       { name: 'nodeId', wire: 'nodeId', source: 'json', codec: stringCodec },
     ],
     cancellation: { parameter: 'signal' },
-    result: strictCodec('dsh-track#NodeDetail', value => value),
+    result: strictCodec('dsh-context-track#NodeDetail', value => value),
   }],
 }
 
