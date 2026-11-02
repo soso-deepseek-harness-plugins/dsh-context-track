@@ -28,6 +28,8 @@ describe('client', () => {
     expect(traceCss).toContain('--dsw-alias-')
     expect(traceCss).not.toContain('--dsh-frame-leading-clearance')
     expect(traceCss).toContain('[data-platform=\'darwin\'] .dsh-context-track-main')
+    expect(traceCss).toContain('[data-conversation-scroll]:has(.dsh-context-track) > [data-composer-seat]:not(:has([data-approval-key], [data-question-key], [data-plan-review-key]))')
+    expect(traceCss).toContain('[data-conversation-scroll]:has(.dsh-context-track) ~ [data-width-handle]')
     expect(traceCss).toContain('--dsh-frame-top-clearance')
     const withoutPalette = traceCss.replace(/\/\* palette \*\/[\s\S]*?\/\* \/palette \*\//, '')
     expect(withoutPalette).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)

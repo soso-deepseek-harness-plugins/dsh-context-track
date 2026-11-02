@@ -38,6 +38,16 @@ function buttons(host: ParentNode, label: string): HTMLButtonElement[] {
   return [...host.querySelectorAll('button')].filter(button => button.textContent?.includes(label))
 }
 
+function rectWidth(element: HTMLElement): number {
+  if (element.classList.contains('dsh-context-track-rail')) return 192
+  if (element.classList.contains('dsh-context-track-bill')) return 320
+  if (element.classList.contains('dsh-context-track-tree')) return 280
+  if (element.classList.contains('dsh-context-track-body')) return 900
+  if (element.classList.contains('dsh-context-track-split')) return 560
+  if (element.classList.contains('dsh-context-track')) return 1200
+  return 400
+}
+
 async function click(button: HTMLButtonElement | undefined): Promise<void> {
   await act(async () => {
     button?.click()
@@ -409,6 +419,53 @@ describe('trace console', () => {
     expect(cell?.textContent).toContain('1 s')
     expect(cell?.querySelector('[data-full="1000"]')).not.toBeNull()
     expect(cell?.textContent).toContain('103')
+    const name = cell?.querySelector('.dsh-context-track-turn-name')
+    const meta = cell?.querySelector('.dsh-context-track-turn-meta')
+    expect(name?.textContent).toBe('轮次 1')
+    expect(meta?.textContent).toContain('1 s')
+    expect(meta?.textContent).toContain('103')
+    expect(name?.parentElement).not.toBe(meta)
+    expect(getComputedStyle(name as HTMLElement).textOverflow).toBe('ellipsis')
+    expect(getComputedStyle(cell as HTMLElement).overflow).toBe('hidden')
+  })
+
+  it('drags every column from the grip on its edge', async () => {
+    const original = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      const width = rectWidth(this as HTMLElement)
+      return { x: 0, y: 0, width, height: 800, top: 0, left: 0, right: width, bottom: 800, toJSON() { return {} } } as DOMRect
+    }
+    const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    try {
+      await act(async () => { await Promise.resolve() })
+      const grips = [...view.host.querySelectorAll<HTMLElement>('.dsh-context-track-grip')]
+      expect(grips.map(grip => grip.dataset.pane)).toEqual(['rail', 'bill', 'tree'])
+      expect(grips.every(grip => grip.getAttribute('aria-orientation') === 'vertical')).toBe(true)
+      const expected: Record<string, string> = { rail: '0 1 272px', bill: '0 1 400px', tree: '0 1 360px' }
+      for (const grip of grips) {
+        const column = grip.previousElementSibling as HTMLElement
+        await act(async () => {
+          grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 100, clientY: 100, pointerId: 1 }))
+        })
+        await act(async () => {
+          grip.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 180, clientY: 180, pointerId: 1 }))
+        })
+        expect(column.style.flex).toBe(expected[grip.dataset.pane ?? ''])
+        await act(async () => {
+          grip.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
+        })
+        expect(grip.dataset.active).toBeUndefined()
+      }
+      const treeGrip = grips[2] as HTMLElement
+      await act(async () => {
+        treeGrip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+      })
+      expect((treeGrip.previousElementSibling as HTMLElement).style.flex).toBe('0 1 256px')
+      expect(view.host.querySelector('.dsh-context-track-turn[aria-current="true"]')?.textContent).toContain('轮次 1')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original
+    }
   })
 
   it('copies the full decimal when the bill total is abbreviated', async () => {

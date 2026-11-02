@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NodeDetail } from '../src/shared/detail.ts'
 import { TRACK_STATE_VERSION, type TrackState } from '../src/shared/model.ts'
 import { en, zh, type TrackKey } from '../src/client/locales.ts'
-import { traceCss } from '../src/client/styles.ts'
+import { ensureStyles, traceCss } from '../src/client/styles.ts'
 import { TraceMain, TracePage, type TracePageProps } from '../src/client/TracePage.tsx'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -15,7 +15,7 @@ const dictionaries = { zh, en }
 function page(list: ListState, getNode: TracePageProps['getNode'], language: 'zh' | 'en' = 'zh'): TracePageProps {
   return {
     sessionId: list.ids[0],
-    useSessions: selector => selector(list as never),
+    useSessions: (selector: (state: ListState) => unknown) => selector(list),
     t: (key: TrackKey) => dictionaries[language][key],
     getNode,
   } as unknown as TracePageProps
@@ -189,6 +189,32 @@ describe('trace panel', () => {
     expect(view.host.textContent).toContain('轮次 1')
     expect(view.host.textContent).toContain(zh.missing)
     expect(view.host.querySelector('.dsh-context-track-tree')).not.toBeNull()
+  })
+
+  it('hides the chat composer on this tab and keeps an approval, question, or plan card', () => {
+    ensureStyles()
+    const body = document.createElement('div')
+    const scroll = document.createElement('div')
+    scroll.setAttribute('data-conversation-scroll', '')
+    const pane = document.createElement('div')
+    pane.className = 'dsh-context-track'
+    const seat = document.createElement('div')
+    seat.setAttribute('data-composer-seat', '')
+    const handle = document.createElement('div')
+    handle.setAttribute('data-width-handle', 'right')
+    scroll.append(pane, seat)
+    body.append(scroll, handle)
+    document.body.append(body)
+    expect(getComputedStyle(seat).display).toBe('none')
+    expect(getComputedStyle(handle).display).toBe('none')
+    for (const name of ['data-approval-key', 'data-question-key', 'data-plan-review-key']) {
+      const card = document.createElement('div')
+      card.setAttribute(name, '1')
+      seat.replaceChildren(card)
+      expect(getComputedStyle(seat).display).not.toBe('none')
+    }
+    seat.replaceChildren()
+    expect(getComputedStyle(seat).display).toBe('none')
   })
 
   it('scrolls the detail pane when the node body is taller than the panel', async () => {

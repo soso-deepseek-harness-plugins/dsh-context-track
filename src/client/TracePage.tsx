@@ -4,7 +4,7 @@
  * retains for the main view. Detail reads committed logs. It does not
  * subscribe to the token stream.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -97,6 +97,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const [detail, setDetail] = useState<NodeDetail | undefined>(undefined)
   const [titleName, setTitleName] = useState<string | undefined>(undefined)
   const [report, setReport] = useState<TurnReport | MissingDetail | undefined>(undefined)
+  const [paneSize, setPaneSize] = useState<Partial<Record<PaneName, number>>>({})
 
   const pickedTurn = turns.find(turn => turn.id === picked)
   const selectedTurn = marker !== undefined
@@ -192,6 +193,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     if (sessionId === undefined || turns.length === 0) return
     const target = event.target
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+    if (target instanceof HTMLElement && target.getAttribute('role') === 'separator') return
     const index = cursorIndex(cursors, activeKey, selectedTurn?.id)
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
@@ -255,6 +257,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
         selectedId={selectedTurn?.id}
         hoverId={hover}
         pinned={pinned}
+        size={paneSize.rail}
         t={translate}
         onHover={setHover}
         onTurn={id => {
@@ -275,9 +278,17 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
       {turns.length === 0 && marker === undefined ? (
         <p className="dsh-context-track-empty">{t('noCalls')}</p>
       ) : (
-        <div className="dsh-context-track-body">
+        <>
+          <Grip
+            pane="rail"
+            vertical={layout === 'narrow'}
+            min={112}
+            keep={280}
+            onSize={px => { setPaneSize(current => ({ ...current, rail: px })) }}
+          />
+          <div className="dsh-context-track-body">
           {marker === undefined && shownReport !== undefined ? (
-            <div className="dsh-context-track-bill" data-bill data-rows="2">
+            <div className="dsh-context-track-bill" data-bill data-rows="2" style={paneFlex(paneSize.bill)}>
               {watching.length > 0 ? <p data-watching>{t('watching').replace('{name}', watching)}</p> : null}
               <TokenCard
                 report={shownReport}
@@ -311,8 +322,17 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
               </TokenCard>
             </div>
           ) : null}
+          {marker === undefined && shownReport !== undefined ? (
+            <Grip
+              pane="bill"
+              vertical={layout === 'narrow'}
+              min={180}
+              keep={220}
+              onSize={px => { setPaneSize(current => ({ ...current, bill: px })) }}
+            />
+          ) : null}
           <div className="dsh-context-track-split">
-            <div className="dsh-context-track-tree">
+            <div className="dsh-context-track-tree" style={paneFlex(paneSize.tree)}>
               <Tree
                 sessionId={sessionId}
                 track={track}
@@ -343,6 +363,13 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 } : undefined}
               />
             </div>
+            <Grip
+              pane="tree"
+              vertical={layout === 'narrow'}
+              min={160}
+              keep={160}
+              onSize={px => { setPaneSize(current => ({ ...current, tree: px })) }}
+            />
             <div className="dsh-context-track-detail" ref={detailRef}>
               {failed ? (
                 <p className="dsh-context-track-muted">{t('missing')}</p>
@@ -370,43 +397,39 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
               )}
             </div>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   )
 }
 
 function Rail({
-  entries, selectedId, hoverId, pinned, t, onHover, onTurn, onMark,
+  entries, selectedId, hoverId, pinned, size, t, onHover, onTurn, onMark,
 }: {
   entries: RailEntry[]
   selectedId?: string
   hoverId?: string
   pinned: boolean
+  size?: number
   t: (key: TrackKey) => string
   onHover: (id: string | undefined) => void
   onTurn: (id: string) => void
   onMark: (id: string) => void
 }): ReactNode {
   return (
-    <div className="dsh-context-track-rail" onMouseLeave={() => { onHover(undefined) }}>
+    <div className="dsh-context-track-rail" style={paneFlex(size)} onMouseLeave={() => { onHover(undefined) }}>
       {entries.map(entry => entry.kind === 'turn' ? (
-        <button
+        <TurnFace
           key={entry.node.id}
-          type="button"
-          className="dsh-context-track-turn"
-          aria-current={selectedId === entry.node.id ? 'true' : undefined}
-          data-hover={hoverId === entry.node.id ? 'true' : undefined}
-          data-pinned={pinned && selectedId === entry.node.id ? 'true' : undefined}
-          onMouseEnter={() => { onHover(entry.node.id) }}
-          onClick={() => { onTurn(entry.node.id) }}
-        >
-          <span className={`dsh-context-track-dot dsh-context-track-status-${entry.node.status}`} data-status={entry.node.status} />
-          <span>{t('round').replace('{n}', String(entry.node.turn))}</span>
-          {entry.node.status === 'ok' ? null : <span>{t(entry.node.status)}</span>}
-          {turnClock(entry.node) !== undefined ? <CopySpan shown={formatDuration(turnClock(entry.node) ?? 0)} /> : null}
-          {turnTotal(entry.node) !== undefined ? <CopySpan shown={abbreviate(turnTotal(entry.node) ?? 0)} /> : null}
-        </button>
+          node={entry.node}
+          current={selectedId === entry.node.id}
+          hover={hoverId === entry.node.id}
+          pinned={pinned && selectedId === entry.node.id}
+          t={t}
+          onHover={() => { onHover(entry.node.id) }}
+          onTurn={() => { onTurn(entry.node.id) }}
+        />
       ) : (
         <button
           key={entry.node.id}
@@ -419,6 +442,120 @@ function Rail({
         </button>
       ))}
     </div>
+  )
+}
+
+/** Name on the first line, clock and tokens on the second, so a narrow rail cannot glue them together. */
+function TurnFace({
+  node, current, hover, pinned, t, onHover, onTurn,
+}: {
+  node: TurnNode
+  current: boolean
+  hover: boolean
+  pinned: boolean
+  t: (key: TrackKey) => string
+  onHover: () => void
+  onTurn: () => void
+}): ReactNode {
+  const clock = turnClock(node)
+  const total = turnTotal(node)
+  return (
+    <button
+      type="button"
+      className="dsh-context-track-turn"
+      aria-current={current ? 'true' : undefined}
+      data-hover={hover ? 'true' : undefined}
+      data-pinned={pinned ? 'true' : undefined}
+      onMouseEnter={onHover}
+      onClick={onTurn}
+    >
+      <span className="dsh-context-track-turn-line">
+        <span className={`dsh-context-track-dot dsh-context-track-status-${node.status}`} data-status={node.status} />
+        <span className="dsh-context-track-turn-name">{t('round').replace('{n}', String(node.turn))}</span>
+        {node.status === 'ok' ? null : <span className={`dsh-context-track-status-${node.status}`}>{t(node.status)}</span>}
+      </span>
+      {clock === undefined && total === undefined ? null : (
+        <span className="dsh-context-track-turn-meta">
+          {clock !== undefined ? <CopySpan shown={formatDuration(clock)} /> : null}
+          {total !== undefined ? <CopySpan shown={abbreviate(total)} /> : null}
+        </span>
+      )}
+    </button>
+  )
+}
+
+type PaneName = 'rail' | 'bill' | 'tree'
+
+function paneFlex(px: number | undefined): { flex: string } | undefined {
+  return px === undefined ? undefined : { flex: `0 1 ${px}px` }
+}
+
+/** Drag the edge of the previous column. The next column keeps the leftover space. */
+function Grip({
+  pane, vertical, min, keep, onSize,
+}: {
+  pane: PaneName
+  vertical: boolean
+  min: number
+  /** Space left for the columns on the far side of this grip. */
+  keep: number
+  onSize: (px: number) => void
+}): ReactNode {
+  const resize = (origin: number, delta: number, room: number) => {
+    const max = room > min + keep ? room - keep : Math.max(min, origin)
+    onSize(Math.round(Math.min(Math.max(origin + delta, min), max)))
+  }
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const handle = event.currentTarget
+    const column = handle.previousElementSibling
+    const parent = handle.parentElement
+    if (!(column instanceof HTMLElement) || parent === null) return
+    event.preventDefault()
+    const columnBox = column.getBoundingClientRect()
+    const parentBox = parent.getBoundingClientRect()
+    const origin = vertical ? columnBox.height : columnBox.width
+    const room = vertical ? parentBox.height : parentBox.width
+    const start = vertical ? event.clientY : event.clientX
+    try { handle.setPointerCapture(event.pointerId) } catch { /* the pointer can leave before capture */ }
+    handle.dataset.active = 'true'
+    const move = (ev: PointerEvent) => {
+      resize(origin, (vertical ? ev.clientY : ev.clientX) - start, room)
+    }
+    const stop = () => {
+      delete handle.dataset.active
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', stop)
+      handle.removeEventListener('pointercancel', stop)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', stop)
+    handle.addEventListener('pointercancel', stop)
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const arrows = event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'ArrowRight' || event.key === 'ArrowLeft'
+    if (!arrows) return
+    event.preventDefault()
+    event.stopPropagation()
+    const grow = vertical ? event.key === 'ArrowDown' : event.key === 'ArrowRight'
+    const shrink = vertical ? event.key === 'ArrowUp' : event.key === 'ArrowLeft'
+    if (!grow && !shrink) return
+    const column = event.currentTarget.previousElementSibling
+    if (!(column instanceof HTMLElement)) return
+    const box = column.getBoundingClientRect()
+    const origin = (vertical ? box.height : box.width) || min
+    resize(origin, grow ? 24 : -24, Number.POSITIVE_INFINITY)
+  }
+  return (
+    <div
+      className="dsh-context-track-grip"
+      data-pane={pane}
+      role="separator"
+      tabIndex={0}
+      aria-orientation={vertical ? 'horizontal' : 'vertical'}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+    />
   )
 }
 

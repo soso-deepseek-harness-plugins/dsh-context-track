@@ -113,13 +113,81 @@ export const traceCss = `
 .dsh-context-track-rail {
   box-sizing: border-box;
   flex: 0 0 12rem;
+  min-width: 7rem;
   min-height: 0;
-  overflow: auto;
+  /* A horizontal scrollbar here is the round label escaping the column. */
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.75rem;
-  border-inline-end: 1px solid var(--dsw-alias-border-l2);
+}
+/* One line glued the round, the clock, and the token total into "112.3 s46.4k". */
+.dsh-context-track button.dsh-context-track-turn {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.3rem 0.35rem;
+  overflow: hidden;
+  text-align: start;
+}
+.dsh-context-track-turn-line,
+.dsh-context-track-turn-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.dsh-context-track-turn-line .dsh-context-track-dot {
+  flex: 0 0 auto;
+}
+.dsh-context-track-turn-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track-turn-line > .dsh-context-track-status-running,
+.dsh-context-track-turn-line > .dsh-context-track-status-error,
+.dsh-context-track-turn-line > .dsh-context-track-status-aborted {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.dsh-context-track-turn-meta {
+  padding-inline-start: 0.85rem;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.dsh-context-track-turn-meta .dsh-context-track-num + .dsh-context-track-num::before {
+  content: "·";
+  margin-inline-end: 0.35rem;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dsh-context-track button.dsh-context-track-turn[data-hover="true"] {
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track button.dsh-context-track-turn[aria-current="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track button.dsh-context-track-turn[data-pinned="true"] {
+  box-shadow: inset 0.125rem 0 0 var(--dsw-alias-label-secondary);
+}
+.dsh-context-track button.dsh-context-track-mark {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.25rem 0.35rem;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dsh-context-track-body {
   box-sizing: border-box;
@@ -143,11 +211,35 @@ export const traceCss = `
   flex-direction: column;
   flex: 0 1 22rem;
   gap: 0.35rem;
-  min-width: 0;
+  min-width: 11rem;
   min-height: 0;
   overflow: auto;
   padding: 0.75rem;
-  border-inline-end: 1px solid var(--dsw-alias-border-l2);
+}
+/* The grip is the column edge. Dragging it sizes the previous pane; the next pane keeps what remains. */
+.dsh-context-track-grip {
+  box-sizing: border-box;
+  flex: 0 0 0.45rem;
+  align-self: stretch;
+  position: relative;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+.dsh-context-track-grip::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--dsw-alias-border-l2);
+}
+.dsh-context-track-grip:hover::before,
+.dsh-context-track-grip:focus-visible::before,
+.dsh-context-track-grip[data-active="true"]::before {
+  width: 3px;
+  background: var(--dsw-alias-label-tertiary);
 }
 .dsh-context-track-bill-figures,
 .dsh-context-track-bill-second {
@@ -269,9 +361,33 @@ export const traceCss = `
 .dsh-context-track[data-layout="narrow"] .dsh-context-track-rail {
   flex: 0 0 auto;
   flex-direction: row;
-  overflow: auto;
-  border-inline-end: 0;
-  border-block-end: 1px solid var(--dsw-alias-border-l2);
+  min-width: 0;
+  min-height: 2.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.dsh-context-track[data-layout="narrow"] button.dsh-context-track-turn {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 12rem;
+}
+.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip {
+  cursor: row-resize;
+}
+.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip::before {
+  inset-block: auto;
+  inset-inline: 0;
+  top: 50%;
+  left: 0;
+  width: auto;
+  height: 1px;
+  transform: translateY(-50%);
+}
+.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip:hover::before,
+.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip:focus-visible::before,
+.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip[data-active="true"]::before {
+  width: auto;
+  height: 3px;
 }
 .dsh-context-track[data-layout="narrow"] .dsh-context-track-body {
   flex-direction: column;
@@ -286,8 +402,8 @@ export const traceCss = `
   flex: 0 0 auto;
   overflow: visible;
   max-height: none;
+  min-width: 0;
   padding: 0.35rem 0.5rem;
-  border-inline-end: 0;
 }
 .dsh-context-track[data-layout="narrow"] .dsh-context-track-tree,
 .dsh-context-track[data-layout="narrow"] .dsh-context-track-detail {
@@ -307,6 +423,19 @@ export const traceCss = `
 }
 .dsh-context-track-facts dt {
   color: var(--dsw-alias-label-secondary);
+}
+/*
+ * Conversation tab: the chat composer is a sticky sibling of this full-height
+ * pane and paints over it. Same rule as dsh-context — hide that seat while
+ * the pane is mounted, and leave it when it is holding an approval, a
+ * question, or a plan review. Width handles are following siblings of the
+ * scroller, so a descendant combinator would match nothing.
+ */
+[data-conversation-scroll]:has(.dsh-context-track) > [data-composer-seat]:not(:has([data-approval-key], [data-question-key], [data-plan-review-key])) {
+  display: none;
+}
+[data-conversation-scroll]:has(.dsh-context-track) ~ [data-width-handle] {
+  display: none;
 }
 `
 
