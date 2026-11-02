@@ -1,12 +1,12 @@
 /**
- * Seats this plugin registers, matching dsh-context: a conversation tab, a
- * right-sidebar page, and a left-sidebar panel row. The host packages own the
+ * Seats this plugin registers: a conversation tab, a right-sidebar page, and a
+ * left-sidebar panel row. The host packages own the
  * runtime slots. These rows exist so this package can type its registrations
  * without pulling those type graphs.
  */
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /** Session tab beside Chat, beside dsh-context's 上下文 tab. */
+    /** Session tab beside Chat. */
     'conversation.view': {
       kind: 'list'
       scope: 'session'

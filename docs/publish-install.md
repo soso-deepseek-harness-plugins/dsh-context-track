@@ -99,13 +99,13 @@ dsh web                              # 同 dsh --profile web
 
 打开会话后，会话页签和右侧栏引导页出现「上下文链路追踪」。点开即可看树和详情。
 
-> 单独 `pnpm add dsh-context-track` 只进 `node_modules`，**不会**启用 Harness 插件层。要用「上下文链路追踪」，走上面的 `dsh plugin add`。
+> 单独 `pnpm add dsh-context-track` 只进 `node_modules`，**不会**启用宿主插件层。要用「上下文链路追踪」，走上面的 `dsh plugin add`。
 
 ---
 
 ## 插件卸载
 
-从指定 profile 卸掉 Harness 插件层（不是 `pnpm remove`）：
+从指定 profile 卸掉宿主插件层（不是 `pnpm remove`）：
 
 ```bash
 dsh plugin --profile <profile> remove dsh-context-track
@@ -138,7 +138,7 @@ $DSH_HOME/profiles/<profile>/dsh-context-track/
 
 ## 源码联调
 
-在本机 `deepseek-harness` 源码启动的 **Web** 或 **Desktop** 里调试本插件。二者共用同一套 Web 界面与 Host。
+在本机宿主源码启动的 **Web** 或 **Desktop** 里调试本插件。二者共用同一套 Web 界面与 Host。
 
 > **原则**
 >
@@ -151,14 +151,14 @@ $DSH_HOME/profiles/<profile>/dsh-context-track/
 | 角色 | 路径 |
 | --- | --- |
 | 本插件 | `/path/to/dsh-context-track` |
-| harness | `/path/to/deepseek-harness` |
+| 宿主 | `/path/to/host` |
 
-下文凡写 `pnpm dsh`，都先 `cd /path/to/deepseek-harness`。
+下文凡写 `pnpm dsh`，都先 `cd /path/to/host`。
 
 ### 1. 一次性准备
 
 ```bash
-cd /path/to/deepseek-harness && pnpm install && pnpm run build
+cd /path/to/host && pnpm install && pnpm run build
 cd /path/to/dsh-context-track        && pnpm install && pnpm run build   # 必须有 lib/
 ```
 
@@ -177,7 +177,7 @@ pnpm test && pnpm run build
 profile 名自定，这里用 `web`。插件写进普通 `$DSH_HOME`（默认 `~/.dsh`）：
 
 ```bash
-cd /path/to/deepseek-harness
+cd /path/to/host
 pnpm dsh plugin --profile web add /path/to/dsh-context-track
 pnpm dsh --profile web --dump-config
 pnpm dsh web                         # 同 pnpm dsh --profile web；勿再写 --profile
@@ -197,7 +197,7 @@ pnpm dsh web                         # 同 pnpm dsh --profile web；勿再写 --
 ```bash
 export DSH_HOME=/tmp/dsh-desktop-dev    # 任意仓库外目录
 
-cd /path/to/deepseek-harness
+cd /path/to/host
 pnpm run start:desktop                  # 首次初始化 desktop profile
 # 完全退出后再装：
 
@@ -211,8 +211,8 @@ pnpm run start:desktop                  # 重开并打开会话后应有「上�
 默认开发 home 在 harness 树下：
 
 ```bash
-export DSH_HOME=/path/to/deepseek-harness/apps/desktop/.desktop-build/development/home
-cd /path/to/deepseek-harness
+export DSH_HOME=/path/to/host/apps/desktop/.desktop-build/development/home
+cd /path/to/host
 pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
 ```
 
@@ -227,7 +227,7 @@ pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
 ```bash
 cd /path/to/dsh-context-track && pnpm run build && pnpm pack
 
-cd /path/to/deepseek-harness
+cd /path/to/host
 # Web
 pnpm dsh plugin --profile web add /path/to/dsh-context-track/dsh-context-track-<version>.tgz
 
@@ -259,7 +259,7 @@ pnpm dsh plugin --profile desktop add /path/to/dsh-context-track
 
 ```bash
 cd /path/to/dsh-context-track && pnpm run build
-cd /path/to/deepseek-harness
+cd /path/to/host
 pnpm dsh web --patch /path/to/dsh-context-track/dev.patch.yml
 ```
 
@@ -298,5 +298,3 @@ pnpm dsh web --patch /path/to/dsh-context-track/dev.patch.yml
 ---
 
 功能说明 → [README](../README.md) · 设计 → [design.md](./design.md)
-
-发布细节也可对照 [pnpm 发布指南](https://www.workbuddy.cn/space/d/jR7KRSSKVnUTZoV2bezae8?ext2=copy_link) 与宿主 [打包与安装插件](https://github.com/deepseek-ai/deepseek-harness/blob/main/docs/user/develop/basic/publish.zh.md)。

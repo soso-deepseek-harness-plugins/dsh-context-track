@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /**
- * Web client artifact. Harness loads `exports["./client"]` as a classic script
+ * Web client artifact. The host loads `exports["./client"]` as a classic script
  * and only accepts a `window.__ModuleLoader__.load` factory. `tsc` stays the
  * host and type build; this bundle is the browser entry.
  */

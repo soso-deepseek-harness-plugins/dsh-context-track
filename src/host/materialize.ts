@@ -106,7 +106,7 @@ function retryOf(data: Record<string, unknown>): { failure: unknown; retry: numb
   }
 }
 
-/** First token from the harness helper; duration is the compact stream's last time minus its start. */
+/** First token from the stream helper; duration is the compact stream's last time minus its start. */
 export function streamTiming(stream: readonly AssistantStreamRecord[]): { firstTokenTime?: number; streamDuration?: number } {
   let time0: number | undefined
   let last: number | undefined

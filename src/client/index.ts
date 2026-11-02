@@ -1,7 +1,7 @@
 /**
- * One web client for browser Harness and the Desktop Electron shell.
- * The entries match dsh-context: a conversation tab, a right-sidebar guide
- * page, and a left-sidebar panel row that opens the same panel in the centre.
+ * One web client for the browser host and the Desktop Electron shell.
+ * Entries: a conversation tab, a right-sidebar guide page, and a left-sidebar
+ * panel row that opens the same panel in the centre.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
@@ -21,7 +21,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Conversation tab id. Sits after dsh-context's `context` tab (order 20). */
+/** Conversation tab id. Registered at order 30, after the tab at order 20. */
 export const VIEW_ID = 'context-track'
 
 /** Right-sidebar type id and kind. A bare name could collide with another plugin. */
@@ -29,7 +29,7 @@ export const TAB_ID = 'dsh-context-track'
 
 /**
  * Left-sidebar row and the centre panel it opens.
- * Sits after Plugins (0), Automation tasks (10), and dsh-context's insights row (20).
+ * Order 30, after the rows at 0, 10, and 20.
  */
 export const PANEL_ID = 'dsh-context-track'
 

@@ -1,5 +1,5 @@
 /**
- * Split one model window into the same buckets dsh-context uses.
+ * Split one model window into token buckets.
  * Tool results are grouped by name. Their call count is the number of result messages.
  */
 import { estimateMessage, estimateTools, isNonEmptySystem, type PricedTool } from './estimate.js'

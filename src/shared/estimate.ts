@@ -1,14 +1,14 @@
 /**
- * Fixed-density token heuristic shared with dsh-context.
+ * Fixed-density token heuristic.
  * About four characters make one token. Ordinary blocks add 4. A role adds 4.
- * System prompts skip the per-block add. Images with a size use DeepSeek's patch grid.
+ * System prompts skip the per-block add. Images with a size use a patch grid.
  */
 
 const CHARS_PER_TOKEN = 4
 const BLOCK_OVERHEAD = 4
 const ROLE_OVERHEAD = 4
 
-/** DeepSeek-V4 vision constants: patch 14, 3× downsample, 1024 token cap, 544² minimum. */
+/** Vision constants: patch 14, 3× downsample, 1024 token cap, 544² minimum. */
 const PATCH = 14
 const DOWNSAMPLE = 3
 const MAX_IMAGE_TOKENS = 1024

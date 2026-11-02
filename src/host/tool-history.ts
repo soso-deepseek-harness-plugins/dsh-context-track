@@ -1,5 +1,5 @@
 /**
- * `ToolHistoryProjection` ships inside `@deepseek-ai/dsh-session` but is not a
+ * `ToolHistoryProjection` ships inside the session package but is not a
  * public export. Load the compiled file that the package already publishes
  * next to its declarations, so an installed bundle does not depend on this checkout.
  */

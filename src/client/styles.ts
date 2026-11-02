@@ -426,8 +426,8 @@ export const traceCss = `
 }
 /*
  * Conversation tab: the chat composer is a sticky sibling of this full-height
- * pane and paints over it. Same rule as dsh-context — hide that seat while
- * the pane is mounted, and leave it when it is holding an approval, a
+ * pane and paints over it. Hide that seat while the pane is mounted, and leave
+ * it when it is holding an approval, a
  * question, or a plan review. Width handles are following siblings of the
  * scroller, so a descendant combinator would match nothing.
  */
