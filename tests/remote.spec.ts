@@ -3,6 +3,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import SessionStore, { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { apply } from '../src/host/index.ts'
 import { isMissing } from '../src/shared/detail.ts'
 
@@ -38,6 +39,7 @@ describe('getNode', () => {
     await ctx.plugin(EndedLogs, logs)
     const remote = apply(ctx)
     await Promise.resolve()
+    expect(remoteMethods(remote).map(method => method.method).sort()).toEqual(['getNode', 'getTurn'])
 
     const missing = await remote.getNode('absent', 'turn:1')
     expect(missing).toEqual({ missing: true })

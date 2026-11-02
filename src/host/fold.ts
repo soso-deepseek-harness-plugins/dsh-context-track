@@ -25,6 +25,7 @@ import {
   type TurnNode,
   type UnlinkedNode,
 } from '../shared/model.js'
+import { streamMetrics, waitMs } from '../shared/timing.js'
 
 /** Fold one event. A throw leaves the previous state in place so session append continues. */
 export function applyTrack(state: TrackState, event: SessionEvent): TrackState {
@@ -65,9 +66,10 @@ export function fold(state: TrackState, event: SessionEvent): TrackState {
       return onToolResult(state, event)
     case 'request/header':
       return onHeader(state, event)
+    case 'user/message':
+      return onUserMessage(state, event)
     case 'request/context':
     case 'system/message':
-    case 'user/message':
     case 'developer/message':
       return bumpRunning(state, event)
     case 'subagent/catalog':
@@ -195,6 +197,7 @@ function onTurnStart(state: TrackState, event: SessionEvent): TrackState {
     turn: turnNumber,
     status: 'running',
     startSeq: event.seq,
+    startTime: event.time,
     items: [],
   }
   return placeRoot(state, turn)
@@ -206,9 +209,9 @@ function statusOfReason(kind: string | undefined): NodeStatus {
   return 'ok'
 }
 
-function closeStep(step: StepNode, status: NodeStatus, endSeq: number): StepNode {
+function closeStep(step: StepNode, status: NodeStatus, endSeq: number, endTime: number): StepNode {
   if (step.status !== 'running') return step
-  return { ...step, status, endSeq }
+  return { ...step, status, endSeq, endTime }
 }
 
 function onTurnEnd(state: TrackState, event: SessionEvent): TrackState {
@@ -224,8 +227,9 @@ function onTurnEnd(state: TrackState, event: SessionEvent): TrackState {
       ...turn,
       status,
       endSeq: event.seq,
+      endTime: event.time,
       ...(kind !== undefined ? { reason: kind } : {}),
-      items: turn.items.map(item => item.kind === 'step' ? closeStep(item, status === 'running' ? 'ok' : status, event.seq) : item),
+      items: turn.items.map(item => item.kind === 'step' ? closeStep(item, status === 'running' ? 'ok' : status, event.seq, event.time) : item),
     }
   })
 }
@@ -245,6 +249,7 @@ function onStepStart(state: TrackState, event: SessionEvent): TrackState {
     step: stepNumber,
     status: 'running',
     startSeq: event.seq,
+    startTime: event.time,
     inputSeq: event.seq + 1,
     attempts: [],
     tools: [],
@@ -263,7 +268,7 @@ function onStepEnd(state: TrackState, event: SessionEvent): TrackState {
     const failed = step.attempts.some(attempt => attempt.status === 'error' || attempt.status === 'aborted')
     const succeeded = step.attempts.some(attempt => attempt.status === 'ok')
     const status: NodeStatus = succeeded || step.attempts.length === 0 ? 'ok' : failed ? 'error' : 'ok'
-    return replaceItem(turn, step.id, { ...step, status, endSeq: event.seq })
+    return replaceItem(turn, step.id, { ...step, status, endSeq: event.seq, endTime: event.time })
   })
 }
 
@@ -276,12 +281,20 @@ function addAttempt(state: TrackState, event: SessionEvent, status: NodeStatus, 
     const step = turn.items.find((item): item is StepNode => item.kind === 'step' && item.step === stepNumber)
     if (!step) return turn
     const attemptNumber = step.attempts.length + 1
+    const metrics = streamMetrics(Array.isArray(data.stream) ? data.stream : [])
+    const waited = waitMs(step.startTime, metrics.streamStart)
     const attempt: AttemptRef = {
       id: attemptId(turnNumber, stepNumber, attemptNumber),
       attempt: attemptNumber,
       inputSeq: event.seq,
       outputSeq: event.seq,
       status,
+      endTime: event.time,
+      thinkMs: metrics.hasReasoning ? metrics.thinkMs : 0,
+      ...(usage !== undefined ? { usage } : {}),
+      ...(metrics.streamStart !== undefined ? { streamStart: metrics.streamStart } : {}),
+      ...(waited !== undefined ? { waitMs: waited } : {}),
+      ...(metrics.firstVisible !== undefined ? { firstVisible: metrics.firstVisible } : {}),
     }
     const next: StepNode = {
       ...step,
@@ -313,8 +326,14 @@ function onRetry(state: TrackState, event: SessionEvent): TrackState {
     const step = turn.items.find((item): item is StepNode => item.kind === 'step' && item.step === stepNumber)
     const last = step?.attempts.at(-1)
     if (!step || !last || last.retrySeq !== undefined) return turn
+    const delayMs = typeof data.delayMs === 'number' ? data.delayMs : undefined
     const attempts = step.attempts.map((attempt, index) => index === step.attempts.length - 1
-      ? { ...attempt, retrySeq: event.seq, status: 'error' as const }
+      ? {
+          ...attempt,
+          retrySeq: event.seq,
+          status: 'error' as const,
+          ...(delayMs !== undefined ? { delayMs } : {}),
+        }
       : attempt)
     return replaceItem(turn, step.id, { ...step, inputSeq: event.seq + 1, attempts })
   })
@@ -337,6 +356,7 @@ function onToolCall(state: TrackState, event: SessionEvent): TrackState {
       name,
       status: 'running',
       callSeq: event.seq,
+      startTime: event.time,
     }
     return replaceItem(turn, step.id, { ...step, inputSeq: event.seq + 1, tools: [...step.tools, tool] })
   })
@@ -381,6 +401,7 @@ function onToolResult(state: TrackState, event: SessionEvent): TrackState {
       ...tool,
       status: isError ? 'error' : 'ok',
       resultSeq: event.seq,
+      endTime: event.time,
       ...(childSessionId !== undefined ? { childSessionId } : {}),
       ...(unlinked?.childLabel !== undefined ? { childLabel: unlinked.childLabel } : {}),
       ...(unlinked?.childMode !== undefined ? { childMode: unlinked.childMode } : {}),
@@ -410,6 +431,23 @@ function onHeader(state: TrackState, event: SessionEvent): TrackState {
     ...(provider !== undefined ? { provider } : {}),
     ...(model !== undefined ? { model } : {}),
   }))
+}
+
+function onUserMessage(state: TrackState, event: SessionEvent): TrackState {
+  return bumpRunning(rememberUser(state, event), event)
+}
+
+function rememberUser(state: TrackState, event: SessionEvent): TrackState {
+  const data = record(event)
+  const source = data.source
+  const kind = source !== null && typeof source === 'object' ? str((source as { kind?: unknown }).kind) : undefined
+  if (kind !== 'user') return state
+  const turn = openTurn(state)
+  if (!turn || turn.userInputs?.some(input => input.seq === event.seq)) return state
+  return replaceRoot(state, turn.id, {
+    ...turn,
+    userInputs: [...(turn.userInputs ?? []), { seq: event.seq, time: event.time }],
+  })
 }
 
 function bumpRunning(state: TrackState, event: SessionEvent): TrackState {

@@ -7,7 +7,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SessionId, type Session, type SessionEvent, type SessionMessageProjection } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type { InstructionRecord, NodeDetail, ToolDetail, TurnDetail, UnlinkedDetail } from '../shared/detail.js'
+import type { InstructionRecord, MissingDetail, NodeDetail, ToolDetail, TurnDetail, UnlinkedDetail } from '../shared/detail.js'
+import type { TurnReport } from '../shared/report.js'
 import {
   findNode,
   type SidecarNode,
@@ -18,6 +19,7 @@ import {
 } from '../shared/model.js'
 import { foldAll } from './fold.js'
 import { materializeAttempt, materializeRunning } from './materialize.js'
+import { buildTurnReport, selectAttempt } from './turn.js'
 import { compactionDetail, compactionOrdinal, searchDetail, titleDetail } from './sidecar.js'
 import { pairInstruction, Supplement, type SupplementOptions } from './supplement.js'
 
@@ -77,6 +79,44 @@ export class TrackRemote extends TypertRemoteService {
     ctx.on('session/disposed', (session) => {
       this.cache.end(session.id)
     }, { global: true })
+  }
+
+  /**
+   * Bill, window, clocks, and event list for one turn.
+   * An empty `attemptId` uses the last successful attempt, or the last attempt.
+   * The same `inputSeq` reuses the prefix cache `getNode` already fills.
+   */
+  @Remote
+  async getTurn(sessionId: string, turnId: string, attemptId: string): Promise<TurnReport | MissingDetail> {
+    try {
+      const loaded = await this.load(sessionId)
+      if (loaded === undefined) return { missing: true, target: 'session' }
+      const found = findNode(loaded.state, turnId)
+      if (found === undefined || found.kind !== 'turn') return { missing: true, target: 'turn' }
+      const selected = selectAttempt(found.node, attemptId)
+      const projections = hostSessions(this.ctx).messageProjections
+      const inputSeq = selected.attempt?.inputSeq ?? loaded.events.length
+      const detail = this.cache.getOr(sessionId, `input:${inputSeq}`, () => (
+        selected.attempt !== undefined
+          ? materializeAttempt(loaded.events, selected.attempt, projections)
+          : materializeRunning(loaded.events, loaded.events.length, projections)
+      ))
+      const attemptKey = selected.attempt?.id ?? 'running'
+      return this.cache.getOr(
+        sessionId,
+        `report:${found.node.id}:${attemptKey}:${loaded.events.length}`,
+        () => buildTurnReport({
+          events: loaded.events,
+          turn: found.node,
+          ...(selected.attempt !== undefined ? { attempt: selected.attempt } : {}),
+          messages: detail.messages,
+          tools: detail.tools,
+          readAt: Date.now(),
+        }),
+      )
+    } catch {
+      return { missing: true, target: 'turn' }
+    }
   }
 
   /**

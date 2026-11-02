@@ -113,7 +113,7 @@ describe('trace panel', () => {
       getNode,
     } as unknown as Parameters<typeof TraceMain>[0]
     act(() => { root.render(<TraceMain {...props} />) })
-    expect(host.textContent).toContain('回合 1')
+    expect(host.textContent).toContain('轮次 1')
     expect(host.querySelector('.dsh-context-track-main')).not.toBeNull()
 
     list.byId.sess = { id: 'sess', retainedBy: {} }
@@ -149,7 +149,7 @@ describe('trace panel', () => {
     roots.push(view.root)
     const panel = view.host.querySelector('.dsh-context-track') as HTMLElement
     panel.style.setProperty('--dsw-alias-label-primary', 'rgb(240, 240, 240)')
-    const label = buttons(view.host, '回合 1')[0]
+    const label = buttons(view.host, '轮次 1')[0]
     expect(label).toBeDefined()
     expect(getComputedStyle(label!).color).toBe('rgb(240, 240, 240)')
   })
@@ -159,11 +159,11 @@ describe('trace panel', () => {
     const getNode = vi.fn()
     const view = mount(page(session(track), getNode))
     roots.push(view.root)
-    expect(view.host.textContent).not.toContain('步骤 1')
+    expect(view.host.textContent).not.toContain('step 1')
     await click(buttons(view.host, zh.expand)[0])
-    expect(view.host.textContent).toContain('步骤 1')
+    expect(view.host.textContent).toContain('step 1')
     await click(buttons(view.host, zh.collapse)[0])
-    expect(view.host.textContent).not.toContain('步骤 1')
+    expect(view.host.textContent).not.toContain('step 1')
     expect(track).toEqual(finishedTurn)
   })
 
@@ -173,9 +173,9 @@ describe('trace panel', () => {
     list.projectionsBySession['child-1'] = { values: { track: childTrack } }
     const view = mount(page(list, getNode))
     roots.push(view.root)
-    await click(buttons(view.host, zh.expand).find(button => button.parentElement?.textContent?.includes('步骤')))
+    await click(buttons(view.host, zh.expand).find(button => button.parentElement?.textContent?.includes('step')))
     await click(buttons(view.host, zh.expand).find(button => button.parentElement?.textContent?.includes('spawn')))
-    expect(view.host.textContent).toContain('回合 7')
+    expect(view.host.textContent).toContain('turn 7')
     expect(view.host.textContent).not.toContain(zh.unavailable)
   })
 
@@ -185,8 +185,8 @@ describe('trace panel', () => {
     })
     const view = mount(page(session(finishedTurn), getNode))
     roots.push(view.root)
-    await click(buttons(view.host, '回合 1')[0])
-    expect(view.host.textContent).toContain('回合 1')
+    await click(buttons(view.host, '轮次 1')[0])
+    expect(view.host.textContent).toContain('轮次 1')
     expect(view.host.textContent).toContain(zh.missing)
     expect(view.host.querySelector('.dsh-context-track-tree')).not.toBeNull()
   })
@@ -201,8 +201,10 @@ describe('trace panel', () => {
     roots.push(view.root)
     view.host.style.cssText = 'display:flex;flex-direction:column;height:160px;overflow:hidden;'
     await click(buttons(view.host, zh.expand)[0])
-    await click(buttons(view.host, '步骤 1')[0])
+    await click(buttons(view.host, 'step 1')[0])
     await act(async () => { await Promise.resolve() })
+    expect(view.host.textContent).not.toContain('tail-marker')
+    await click(view.host.querySelector('[data-more]') as HTMLButtonElement)
     const detail = view.host.querySelector('.dsh-context-track-detail') as HTMLElement
     const tree = view.host.querySelector('.dsh-context-track-tree') as HTMLElement
     const track = view.host.querySelector('.dsh-context-track') as HTMLElement
@@ -211,8 +213,12 @@ describe('trace panel', () => {
     expect(getComputedStyle(tree).minHeight).not.toBe('auto')
     expect(traceCss).toMatch(/\.dsh-context-track \{[^}]*overflow:\s*hidden/)
     expect(traceCss).toMatch(/\.dsh-context-track-detail \{[^}]*overflow:\s*auto/)
-    expect(view.host.textContent).toContain('回合 1')
+    expect(view.host.textContent).toContain('轮次 1')
     expect(view.host.textContent).toContain('tail-marker')
+    tree.scrollTop = 15
+    detail.scrollTop = 40
+    expect(tree.scrollTop).toBe(15)
+    expect(detail.scrollTop).toBe(40)
   })
 
   it('loads the latest attempt and a running prefix without a token subscription', async () => {
@@ -226,11 +232,12 @@ describe('trace panel', () => {
     const view = mount(page(list, getNode))
     roots.push(view.root)
     await click(buttons(view.host, zh.expand)[0])
-    await click(buttons(view.host, '步骤 1')[0])
+    await click(buttons(view.host, 'step 1')[0])
     await act(async () => { await Promise.resolve() })
     expect(getNode).toHaveBeenCalledWith('sess', 'attempt:1:1:1')
     expect(view.host.textContent).toContain('seen-input')
     expect(view.host.textContent).toContain('seen-output')
+    expect(buttons(view.host, '概览')).toHaveLength(0)
     const calls = getNode.mock.calls.length
     act(() => { view.root.render(<TracePage {...page(list, getNode)} />) })
     await act(async () => { await Promise.resolve() })
@@ -243,10 +250,11 @@ describe('trace panel', () => {
     const live = vi.fn(async () => ({ ok: true as const, value: running }))
     const liveView = mount(page(session(runningStep), live))
     roots.push(liveView.root)
-    await click(buttons(liveView.host, '步骤 1')[0])
+    await click(buttons(liveView.host, 'step 1')[0])
     await act(async () => { await Promise.resolve() })
     expect(live).toHaveBeenCalledWith('sess', 'step:1:1')
     expect(liveView.host.textContent).toContain('live-prefix')
+    expect(liveView.host.textContent).toContain(zh.notSeen)
     expect(liveView.host.textContent).not.toContain('token-delta')
   })
 })

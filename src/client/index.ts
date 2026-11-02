@@ -53,13 +53,16 @@ export async function apply(ctx: Context): Promise<void> {
   const t = ctx.locale.bind(NS)
   ctx.inject(['remote.track'], (trackCtx) => {
     const getNode = (sessionId: string, nodeId: string) => trackCtx.remote.track.getNode(sessionId, nodeId)
+    const getTurn = (sessionId: string, turnId: string, attemptId: string) => (
+      trackCtx.remote.track.getTurn(sessionId, turnId, attemptId)
+    )
     trackCtx.slots.inject('conversation.view', () => trackCtx.slots.register({
       name: 'conversation.view',
       id: VIEW_ID,
       order: 30,
       locale: NS,
       label: () => t('panel'),
-      inject: (): TrackInject => ({ getNode }),
+      inject: (): TrackInject => ({ getNode, getTurn }),
     }, TracePage))
     trackCtx.inject(['sidebarRightTabs'], (sideCtx) => {
       sideCtx.effect(() => sideCtx.sidebarRightTabs.register({
@@ -78,7 +81,7 @@ export async function apply(ctx: Context): Promise<void> {
         name: 'sidebar.right.pane.tab',
         key: TAB_ID,
         locale: NS,
-        inject: (): TrackInject => ({ getNode }),
+        inject: (): TrackInject => ({ getNode, getTurn }),
       }, TracePage))
       sideCtx.slots.inject('sidebar.right.pane.tab.title', () => sideCtx.slots.register({
         name: 'sidebar.right.pane.tab.title',
@@ -100,7 +103,7 @@ export async function apply(ctx: Context): Promise<void> {
       name: 'main',
       key: PANEL_ID,
       locale: NS,
-      inject: (): TrackInject => ({ getNode }),
+      inject: (): TrackInject => ({ getNode, getTurn }),
     }, TraceMain))
   })
 }

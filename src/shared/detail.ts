@@ -2,6 +2,8 @@
 
 export interface MissingDetail {
   missing: true
+  /** Which read failed. Omitted by node reads that only say the node is gone. */
+  target?: 'session' | 'turn'
 }
 
 export interface AttemptDetail {

@@ -1,6 +1,6 @@
 /** Trace index: sequence numbers and scalars only. No message bodies. */
 
-export const TRACK_STATE_VERSION = 1 as const
+export const TRACK_STATE_VERSION = 2 as const
 
 export type NodeStatus = 'running' | 'ok' | 'error' | 'aborted'
 
@@ -24,6 +24,20 @@ export interface AttemptRef {
   outputSeq?: number
   retrySeq?: number
   status: NodeStatus
+  /** Model usage for this attempt. A later attempt does not replace it. */
+  usage?: TokenUsageScalars
+  /** Assistant event time. The stream body is not stored. */
+  endTime?: number
+  /** Earliest compact-stream `time0` or raw chunk time. */
+  streamStart?: number
+  /** `streamStart − step start`. Absent when the stream has not started. */
+  waitMs?: number
+  /** Reasoning duration. Zero means the settled attempt had no reasoning fragment. */
+  thinkMs?: number
+  /** Earliest user-visible output in this attempt. */
+  firstVisible?: number
+  /** Retry backoff. It is not part of model wait. */
+  delayMs?: number
 }
 
 export interface ToolNode {
@@ -34,6 +48,8 @@ export interface ToolNode {
   status: NodeStatus
   callSeq: number
   resultSeq?: number
+  startTime?: number
+  endTime?: number
   childSessionId?: string
   childLabel?: string
   childMode?: string
@@ -47,8 +63,11 @@ export interface StepNode {
   status: NodeStatus
   startSeq: number
   endSeq?: number
+  startTime?: number
+  endTime?: number
   provider?: string
   model?: string
+  /** Latest reported usage. Each attempt keeps its own copy. */
   usage?: TokenUsageScalars
   /** Log length while the step has no assistant event yet. */
   inputSeq: number
@@ -79,6 +98,12 @@ export interface UnlinkedNode {
 
 export type TurnItem = StepNode | SidecarNode | UnlinkedNode
 
+/** A `source.kind === 'user'` message. The text stays in the log. */
+export interface UserInputMark {
+  seq: number
+  time: number
+}
+
 export interface TurnNode {
   kind: 'turn'
   id: string
@@ -87,6 +112,10 @@ export interface TurnNode {
   reason?: string
   startSeq: number
   endSeq?: number
+  startTime?: number
+  endTime?: number
+  /** User messages in log order. The opening input still starts at `startTime`. */
+  userInputs?: UserInputMark[]
   items: TurnItem[]
 }
 

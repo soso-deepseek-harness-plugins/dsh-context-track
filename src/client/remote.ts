@@ -4,7 +4,8 @@
  * contribution below is what creates `remote.track`.
  */
 import type { RemoteResult, TypertRemoteContribution, TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
-import type { NodeDetail } from '../shared/detail.js'
+import type { MissingDetail, NodeDetail } from '../shared/detail.js'
+import type { TurnReport } from '../shared/report.js'
 
 /** Strict boundary codec. The gateway checks the mode; parsing stays local. */
 function strictCodec(typeSymbol: string, parse: (value: unknown) => unknown): TypertRemoteContribution['descriptors'][number]['result'] {
@@ -23,6 +24,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       nodeId: string,
       signal?: AbortSignal,
     ): Promise<RemoteResult<NodeDetail>>
+    'track/getTurn'(
+      sessionId: string,
+      turnId: string,
+      attemptId: string,
+      signal?: AbortSignal,
+    ): Promise<RemoteResult<TurnReport | MissingDetail>>
   }
 
   interface TypertRemoteNamespaceMap {
@@ -50,6 +57,19 @@ export const trackRemote: TypertRemoteContribution = {
     ],
     cancellation: { parameter: 'signal' },
     result: strictCodec('dsh-context-track#NodeDetail', value => value),
+  }, {
+    id: 'dsh-context-track#track/getTurn',
+    service: 'track',
+    namespace: 'track',
+    method: 'getTurn',
+    invocation: { kind: 'direct' },
+    parameters: [
+      { name: 'sessionId', wire: 'sessionId', source: 'json', codec: stringCodec },
+      { name: 'turnId', wire: 'turnId', source: 'json', codec: stringCodec },
+      { name: 'attemptId', wire: 'attemptId', source: 'json', codec: stringCodec },
+    ],
+    cancellation: { parameter: 'signal' },
+    result: strictCodec('dsh-context-track#TurnReport', value => value),
   }],
 }
 

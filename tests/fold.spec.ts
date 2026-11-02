@@ -132,6 +132,51 @@ describe('fold', () => {
     expect(JSON.stringify(state)).not.toContain('hidden body')
   })
 
+  it('keeps each attempt’s usage and leaves a running step without timing scalars', () => {
+    const state = foldAll([
+      ev(0, 'turn/start', { turn: 1 }),
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+      ev(2, 'user/message', { role: 'user', content: [{ type: 'text', text: 'ask' }], source: { kind: 'user' } }),
+    ])
+    expect(step(state)).toMatchObject({ status: 'running', attempts: [] })
+    expect(step(state)).not.toHaveProperty('waitMs')
+    expect(step(state)).not.toHaveProperty('thinkMs')
+    expect(turn(state, 1).userInputs).toEqual([{ seq: 2, time: 2 }])
+    expect(JSON.stringify(state)).not.toContain('ask')
+
+    const settled = foldAll([
+      ev(0, 'turn/start', { turn: 1 }),
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+      ev(2, 'assistant/message', {
+        turn: 1, step: 1,
+        stream: [{ type: 'text-chunks', time0: 10, index: 0, dt: [4], texts: ['first body'] }],
+        usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 },
+        message: { role: 'assistant', content: [{ type: 'text', text: 'first body' }] },
+      }),
+      ev(3, 'llm/retry', { turn: 1, step: 1, retry: 1, delayMs: 25, failure: { message: 'down' } }),
+      ev(4, 'assistant/message', {
+        turn: 1, step: 1,
+        stream: [{ type: 'text-chunks', time0: 40, index: 0, dt: [5], texts: ['second body'] }],
+        usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10 },
+        message: { role: 'assistant', content: [{ type: 'text', text: 'second body' }] },
+      }),
+    ])
+    const attempts = step(settled).attempts
+    expect(attempts[0]?.usage).toEqual({ inputTokens: 3, outputTokens: 1, totalTokens: 4 })
+    expect(attempts[1]?.usage).toEqual({ inputTokens: 8, outputTokens: 2, totalTokens: 10 })
+    expect(attempts[0]?.delayMs).toBe(25)
+    expect(step(settled).usage).toEqual({ inputTokens: 8, outputTokens: 2, totalTokens: 10 })
+    expect(JSON.stringify(settled)).not.toContain('first body')
+    expect(JSON.stringify(settled)).not.toContain('second body')
+    expect(settled.stateVersion).toBe(2)
+    const stale = { ...settled, stateVersion: 1 as never }
+    expect(stale.stateVersion).not.toBe(settled.stateVersion)
+    expect(foldAll([
+      ev(0, 'turn/start', { turn: 1 }),
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+    ]).stateVersion).toBe(2)
+  })
+
   it('returns the same state for an unknown event and survives a throwing event', () => {
     const start = foldAll([ev(0, 'turn/start', { turn: 1 })])
     expect(fold(start, ev(1, 'plugin/unknown', { body: 'nope' }))).toBe(start)
