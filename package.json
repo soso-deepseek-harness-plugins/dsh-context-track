@@ -2,7 +2,7 @@
   "name": "dsh-context-track",
   "version": "0.0.0",
   "description": "Context trace of an agent session: turns, model steps, tools, subagents, and sidecar model calls.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/soso-deepseek-harness-plugins/dsh-context-track.git"
@@ -65,6 +65,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "markdown-to-jsx": "9.10.4",
     "zod": "4.4.3"
   },
   "peerDependencies": {

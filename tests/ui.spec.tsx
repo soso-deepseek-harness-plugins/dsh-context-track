@@ -36,7 +36,9 @@ function mount(props: TracePageProps): { host: HTMLDivElement; root: Root } {
 }
 
 function buttons(host: ParentNode, label: string): HTMLButtonElement[] {
-  return [...host.querySelectorAll('button')].filter(button => button.textContent?.includes(label))
+  return [...host.querySelectorAll('button')].filter(button =>
+    button.textContent?.includes(label) === true || button.getAttribute('aria-label')?.includes(label) === true,
+  )
 }
 
 async function click(button: HTMLButtonElement | undefined): Promise<void> {

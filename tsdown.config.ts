@@ -20,6 +20,8 @@ export default defineConfig({
   clean: false,
   deps: {
     neverBundle: ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'],
+    // The web host only provides React. The markdown compiler stays inside the client script.
+    alwaysBundle: [/^markdown-to-jsx(\/|$)/],
   },
   outputOptions: {
     entryFileNames: 'index.js',

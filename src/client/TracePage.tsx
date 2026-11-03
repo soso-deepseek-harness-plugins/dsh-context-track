@@ -98,6 +98,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const [titleName, setTitleName] = useState<string | undefined>(undefined)
   const [report, setReport] = useState<TurnReport | MissingDetail | undefined>(undefined)
   const [paneSize, setPaneSize] = useState<Partial<Record<PaneName, number>>>({})
+  const [detailOpen, setDetailOpen] = useState(true)
 
   const pickedTurn = turns.find(turn => turn.id === picked)
   const selectedTurn = marker !== undefined
@@ -370,8 +371,19 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
               keep={160}
               onSize={px => { setPaneSize(current => ({ ...current, tree: px })) }}
             />
-            <div className="dsh-context-track-detail" ref={detailRef}>
-              {failed ? (
+            <div className="dsh-context-track-detail" data-collapsed={detailOpen ? undefined : 'true'} ref={detailRef}>
+              <button
+                type="button"
+                className="dsh-context-track-detail-toggle"
+                data-detail-toggle
+                aria-expanded={detailOpen}
+                aria-label={detailOpen ? translate('collapse') : translate('expand')}
+                onClick={() => { setDetailOpen(open => !open) }}
+              >
+                <span aria-hidden="true">{detailOpen ? '▸' : '◂'}</span>
+                {detailOpen ? null : <span>{translate('detailPane')}</span>}
+              </button>
+              {!detailOpen ? null : failed ? (
                 <p className="dsh-context-track-muted">{t('missing')}</p>
               ) : (
                 <Detail

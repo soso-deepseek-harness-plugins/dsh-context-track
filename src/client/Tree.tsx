@@ -52,6 +52,8 @@ export interface TreeProps {
   /** Compaction numbers for one turn. Other turns keep the plain sidecar label. */
   turnBill?: { turnId: string; reclaimed?: Figure; cost: Figure }
   parentTurnId?: string
+  /** Nesting depth. Indent applies only inside the label cluster. */
+  depth?: number
 }
 
 /** Render one session's index, nesting a child session's own index under its tool. */
@@ -96,6 +98,8 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
         bar={box(origin, end, origin, span)}
         duration={origin !== undefined && end !== undefined ? end - origin : undefined}
         markLeft={markLeft}
+        depth={nest(props)}
+        kind="turn"
         t={props.t}
         onToggle={() => { props.onToggle(key, 'turn', node.status) }}
         onSelect={() => { activate(props, cursor) }}
@@ -103,7 +107,7 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
       {expanded ? (
         <div className="dsh-context-track-children">
           {node.items.map(item => (
-            <ItemRow key={item.id} item={item} origin={origin} span={span} markLeft={markLeft} {...props} parentTurnId={node.id} />
+            <ItemRow key={item.id} item={item} origin={origin} span={span} markLeft={markLeft} {...props} depth={nest(props) + 1} parentTurnId={node.id} />
           ))}
         </div>
       ) : null}
@@ -124,6 +128,7 @@ function StepRow({
   if (!rowVisible('step', undefined, props.filter)) return null
   const key = rowKey(props.sessionId, node.id)
   const expanded = props.open[key] ?? false
+  const depth = nest(props)
   const latest = node.attempts[node.attempts.length - 1]
   const target = latest?.id ?? node.id
   const canExpand = node.attempts.length > 0 || node.tools.length > 0
@@ -146,7 +151,9 @@ function StepRow({
         bar={box(start, end, origin, span)}
         duration={start !== undefined && end !== undefined ? end - start : undefined}
         markLeft={markLeft}
-        title={hoverTitle(props.calls, latest?.id, props.t)}
+        timing={timingText(props.calls, latest?.id, props.t)}
+        depth={depth}
+        kind="step"
         t={props.t}
         onToggle={() => { props.onToggle(key, 'step', node.status) }}
         onSelect={() => { activate(props, cursor) }}
@@ -154,7 +161,7 @@ function StepRow({
       {expanded ? (
         <div className="dsh-context-track-children">
           {node.attempts.filter(() => rowVisible('attempt', undefined, props.filter)).map(attempt => (
-            <AttemptRow key={attempt.id} attempt={attempt} origin={origin} span={span} markLeft={markLeft} {...props} />
+            <AttemptRow key={attempt.id} attempt={attempt} origin={origin} span={span} markLeft={markLeft} {...props} depth={depth + 1} />
           ))}
           {node.tools.filter(() => rowVisible('tool', undefined, props.filter)).map(tool => {
             const childKey = rowKey(props.sessionId, tool.id)
@@ -177,13 +184,15 @@ function StepRow({
                   bar={box(tool.startTime, tool.endTime ?? props.now, origin, span)}
                   duration={tool.startTime !== undefined && tool.endTime !== undefined ? tool.endTime - tool.startTime : undefined}
                   markLeft={markLeft}
+                  depth={depth + 1}
+                  kind="tool"
                   t={props.t}
                   onToggle={() => { props.onToggle(childKey, 'tool', shown) }}
                   onSelect={() => { activate(props, cursor) }}
                 />
                 {childOpen && expandable && tool.childSessionId !== undefined ? (
                   <div className="dsh-context-track-children">
-                    <Tree {...props} sessionId={tool.childSessionId} track={childTrack} responseEnd={undefined} />
+                    <Tree {...props} sessionId={tool.childSessionId} track={childTrack} depth={depth + 2} responseEnd={undefined} />
                   </div>
                 ) : null}
               </div>
@@ -216,7 +225,9 @@ function AttemptRow({
       bar={box(start, end, origin, span)}
       duration={start !== undefined && end !== undefined ? end - start : undefined}
       markLeft={markLeft}
-      title={hoverTitle(props.calls, attempt.id, props.t)}
+      timing={timingText(props.calls, attempt.id, props.t)}
+      depth={nest(props)}
+      kind="attempt"
       t={props.t}
       onToggle={() => undefined}
       onSelect={() => { activate(props, cursor) }}
@@ -252,6 +263,8 @@ function SidecarRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'sideca
       expanded={false}
       canExpand={false}
       current={isCurrent(props, props.node.id)}
+      depth={nest(props)}
+      kind="sidecar"
       t={props.t}
       onToggle={() => undefined}
       onSelect={() => { activate(props, cursor) }}
@@ -277,13 +290,15 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
         expanded={expanded}
         canExpand={expandable}
         current={isCurrent(props, props.node.id)}
+        depth={nest(props)}
+        kind="unlinked"
         t={props.t}
         onToggle={() => { props.onToggle(key, 'unlinked', 'ok') }}
         onSelect={() => { activate(props, cursor) }}
       />
       {expanded && expandable ? (
         <div className="dsh-context-track-children">
-          <Tree {...props} sessionId={props.node.childSessionId} track={childTrack} responseEnd={undefined} />
+          <Tree {...props} sessionId={props.node.childSessionId} track={childTrack} depth={nest(props) + 1} responseEnd={undefined} />
         </div>
       ) : null}
     </div>
@@ -291,7 +306,7 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
 }
 
 function Row({
-  label, secondary, status, expanded, canExpand, current, usage, bar, duration, markLeft, title, t, onToggle, onSelect,
+  label, secondary, status, expanded, canExpand, current, usage, bar, duration, markLeft, timing, depth, kind, t, onToggle, onSelect,
 }: {
   label: string
   secondary?: string
@@ -303,44 +318,69 @@ function Row({
   bar?: { left: number; width: number }
   duration?: number
   markLeft?: number
-  title?: string
+  timing?: string
+  depth: number
+  kind: 'turn' | 'step' | 'attempt' | 'tool' | 'sidecar' | 'unlinked'
   t: (key: TrackKey) => string
   onToggle: () => void
   onSelect: () => void
 }): ReactNode {
   const bill = usage === undefined ? undefined : billOf(usage)
   return (
-    <div className="dsh-context-track-row" title={title} aria-current={current ? 'true' : undefined}>
-      {canExpand ? (
-        <button type="button" onClick={onToggle} aria-expanded={expanded}>
-          {expanded ? t('collapse') : t('expand')}
-        </button>
-      ) : null}
-      <span className={`dsh-context-track-dot dsh-context-track-status-${status}`} />
-      <button type="button" className="dsh-context-track-label" onClick={onSelect}>
-        <span>{label}</span>
-        {secondary !== undefined ? <span className="dsh-context-track-muted"> {secondary}</span> : null}
-        {status === 'ok' ? null : (
-          <>
-            {' '}
-            <span className={`dsh-context-track-status-${status}`}>{t(status)}</span>
-          </>
+    <div className="dsh-context-track-row" aria-current={current ? 'true' : undefined}>
+      <div
+        className="dsh-context-track-cluster"
+        data-depth={depth}
+        style={{ paddingInlineStart: `${depth * 0.75}rem` }}
+      >
+        {canExpand ? (
+          <button
+            type="button"
+            className="dsh-context-track-chevron"
+            aria-expanded={expanded}
+            aria-label={expanded ? t('collapse') : t('expand')}
+            onClick={onToggle}
+          >
+            <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          </button>
+        ) : (
+          <span className="dsh-context-track-chevron" aria-hidden="true" />
         )}
-      </button>
-      <span className="dsh-context-track-bar" data-left={bar?.left}>
+        <span className={`dsh-context-track-dot dsh-context-track-status-${status}`} />
+        <button type="button" className="dsh-context-track-label" onClick={onSelect}>
+          <span>
+            {label}
+            {status === 'ok' ? null : (
+              <>
+                {' '}
+                <span className={`dsh-context-track-status-${status}`}>{t(status)}</span>
+              </>
+            )}
+          </span>
+          {secondary !== undefined && secondary.length > 0 ? (
+            <span className="dsh-context-track-muted">{secondary}</span>
+          ) : null}
+        </button>
+        {timing !== undefined ? <span data-timing className="dsh-context-track-timing">{timing}</span> : null}
+      </div>
+      <span data-column="duration">
+        {duration !== undefined ? <DurationView ms={duration} /> : null}
+      </span>
+      <span data-column="tokens">
+        {bill !== undefined ? (
+          <span className="dsh-context-track-num">
+            <FigureView figure={bill.input} t={t} showBasis={false} />
+            {' → '}
+            <FigureView figure={bill.output} t={t} showBasis={false} />
+          </span>
+        ) : null}
+      </span>
+      <span className="dsh-context-track-bar" data-column="bar" data-kind={kind === 'attempt' ? 'step' : kind} data-left={bar?.left}>
         {bar !== undefined ? <i style={{ left: `${bar.left}%`, width: `${bar.width}%` }} /> : null}
         {markLeft !== undefined ? (
           <span className="dsh-context-track-response" data-response-end style={{ left: `${markLeft}%` }} />
         ) : null}
       </span>
-      {duration !== undefined ? <DurationView ms={duration} /> : null}
-      {bill !== undefined ? (
-        <span className="dsh-context-track-num">
-          <FigureView figure={bill.input} t={t} showBasis={false} />
-          {' → '}
-          <FigureView figure={bill.output} t={t} showBasis={false} />
-        </span>
-      ) : null}
     </div>
   )
 }
@@ -406,7 +446,11 @@ function activate(props: TreeProps, cursor: TreeCursor): void {
   props.onActivate?.(cursor)
 }
 
-function hoverTitle(
+function nest(props: { depth?: number }): number {
+  return props.depth ?? 0
+}
+
+function timingText(
   calls: readonly CallTiming[] | undefined,
   attemptId: string | undefined,
   t: (key: TrackKey) => string,
