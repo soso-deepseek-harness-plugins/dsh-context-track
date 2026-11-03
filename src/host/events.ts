@@ -122,11 +122,17 @@ function nodeFor(turn: TurnNode, seq: number): string | undefined {
   for (const item of turn.items) {
     if (item.kind === 'sidecar' && item.requestSeq === seq) return item.id
     if (item.kind !== 'step') continue
+    for (const search of item.searches ?? []) {
+      if (search.requestSeq === seq) return search.id
+    }
     for (const attempt of item.attempts) {
       if (attempt.outputSeq === seq) return attempt.id
     }
     for (const tool of item.tools) {
       if (tool.callSeq === seq) return tool.id
+      for (const search of tool.searches ?? []) {
+        if (search.requestSeq === seq) return search.id
+      }
     }
   }
   return undefined

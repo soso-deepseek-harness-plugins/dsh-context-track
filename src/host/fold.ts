@@ -296,11 +296,20 @@ function addAttempt(state: TrackState, event: SessionEvent, status: NodeStatus, 
       ...(waited !== undefined ? { waitMs: waited } : {}),
       ...(metrics.firstVisible !== undefined ? { firstVisible: metrics.firstVisible } : {}),
     }
+    const searches = step.searches?.map(search => {
+      if (search.origin?.kind !== 'step' || search.origin.attemptId !== undefined) return search
+      if (search.requestSeq > event.seq) return search
+      return {
+        ...search,
+        origin: { ...search.origin, attemptId: attempt.id, attempt: attemptNumber, outputSeq: event.seq },
+      }
+    })
     const next: StepNode = {
       ...step,
       inputSeq: event.seq + 1,
       attempts: [...step.attempts, attempt],
       ...(usage !== undefined ? { usage } : {}),
+      ...(searches !== undefined ? { searches } : {}),
     }
     void interrupted
     return replaceItem(turn, step.id, next)
@@ -604,7 +613,69 @@ function onSearch(state: TrackState, event: SessionEvent): TrackState {
     outputSeq: event.seq,
   }
   const turn = hostTurn(state)
-  return addSidecar(state, sidecar, turn ? turn.turn : null)
+  if (!turn) return placeRoot(state, sidecar)
+  if (turnHasSearch(turn, sidecar.id)) return state
+  const owner = webSearchOwner(turn, event.seq)
+  if (owner) {
+    const { step, tool } = owner
+    const nextTool: ToolNode = {
+      ...tool,
+      searches: [...(tool.searches ?? []), {
+        ...sidecar,
+        origin: { kind: 'tool', toolId: tool.id, callId: tool.callId, name: tool.name, callSeq: tool.callSeq },
+      }],
+    }
+    const tools = step.tools.map(entry => entry.id === tool.id ? nextTool : entry)
+    return replaceRoot(state, turn.id, replaceItem(turn, step.id, { ...step, tools }))
+  }
+  const step = stepForSeq(turn, event.seq)
+  if (!step) return addSidecar(state, sidecar, turn.turn)
+  const attempt = [...step.attempts].reverse().find(item => (item.outputSeq ?? item.inputSeq) <= event.seq)
+  const placed: SidecarNode = {
+    ...sidecar,
+    origin: {
+      kind: 'step',
+      stepId: step.id,
+      step: step.step,
+      ...(attempt !== undefined ? { attemptId: attempt.id, attempt: attempt.attempt, outputSeq: attempt.outputSeq } : {}),
+    },
+  }
+  return replaceRoot(state, turn.id, replaceItem(turn, step.id, {
+    ...step,
+    searches: [...(step.searches ?? []), placed],
+  }))
+}
+
+/** The step whose window contains `seq`, or the latest step that had already started. */
+function stepForSeq(turn: TurnNode, seq: number): StepNode | undefined {
+  const steps = turn.items.filter((item): item is StepNode => item.kind === 'step')
+  const inside = [...steps].reverse().find(step => step.startSeq <= seq && (step.endSeq === undefined || seq <= step.endSeq))
+  if (inside) return inside
+  return [...steps].reverse().find(step => step.startSeq <= seq)
+}
+
+/** The `web_search` call that is still running at `seq`. Other tools do not own a search. */
+function webSearchOwner(turn: TurnNode, seq: number): { step: StepNode; tool: ToolNode } | undefined {
+  let open: { step: StepNode; tool: ToolNode } | undefined
+  for (const item of turn.items) {
+    if (item.kind !== 'step') continue
+    for (const tool of item.tools) {
+      if (tool.name !== 'web_search' || tool.callSeq > seq) continue
+      if (tool.resultSeq !== undefined && seq > tool.resultSeq) continue
+      if (open === undefined || tool.callSeq >= open.tool.callSeq) open = { step: item, tool }
+    }
+  }
+  return open
+}
+
+function turnHasSearch(turn: TurnNode, id: string): boolean {
+  for (const item of turn.items) {
+    if (item.kind === 'sidecar' && item.id === id) return true
+    if (item.kind !== 'step') continue
+    if (item.searches?.some(search => search.id === id)) return true
+    if (item.tools.some(tool => tool.searches?.some(search => search.id === id))) return true
+  }
+  return false
 }
 
 function* sidecarsOf(state: TrackState): Generator<SidecarNode> {

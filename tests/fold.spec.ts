@@ -168,13 +168,75 @@ describe('fold', () => {
     expect(step(settled).usage).toEqual({ inputTokens: 8, outputTokens: 2, totalTokens: 10 })
     expect(JSON.stringify(settled)).not.toContain('first body')
     expect(JSON.stringify(settled)).not.toContain('second body')
-    expect(settled.stateVersion).toBe(2)
+    expect(settled.stateVersion).toBe(4)
     const stale = { ...settled, stateVersion: 1 as never }
     expect(stale.stateVersion).not.toBe(settled.stateVersion)
     expect(foldAll([
       ev(0, 'turn/start', { turn: 1 }),
       ev(1, 'step/start', { turn: 1, step: 1 }),
-    ]).stateVersion).toBe(2)
+    ]).stateVersion).toBe(4)
+  })
+
+  it('nests a search under the running tool, or under the step that produced it', () => {
+    const duringTool = foldAll([
+      ev(0, 'turn/start', { turn: 1 }),
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+      ev(2, 'assistant/message', {
+        turn: 1, step: 1, stream: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        message: { role: 'assistant', content: [{ type: 'tool-call', name: 'web_search' }] },
+      }),
+      ev(3, 'tool/call', { turn: 1, step: 1, callId: 'c1', name: 'web_search', arguments: '{"query":"hidden"}' }),
+      ev(4, 'web/deepseek-search-llm-request', { query: 'hidden body' }),
+      ev(5, 'tool/result', { turn: 1, step: 1, message: { toolCallId: 'c1', content: [] } }),
+    ])
+    const called = step(duringTool)
+    expect(called.searches).toBeUndefined()
+    expect(called.tools[0]?.searches?.[0]).toMatchObject({
+      purpose: 'web-search',
+      requestSeq: 4,
+      origin: { kind: 'tool', name: 'web_search', callId: 'c1', callSeq: 3 },
+    })
+    expect(JSON.stringify(duringTool)).not.toContain('hidden')
+
+    const duringStep = foldAll([
+      ev(0, 'turn/start', { turn: 1 }),
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+      ev(2, 'web/deepseek-search-llm-request', { query: 'early' }),
+      ev(3, 'assistant/message', {
+        turn: 1, step: 1, stream: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        message: { role: 'assistant', content: [{ type: 'text', text: 'early body' }] },
+      }),
+    ])
+    expect(step(duringStep).tools).toEqual([])
+    expect(step(duringStep).searches?.[0]?.origin).toMatchObject({
+      kind: 'step', step: 1, attemptId: 'attempt:1:1:1', attempt: 1, outputSeq: 3,
+    })
+    expect(JSON.stringify(duringStep)).not.toContain('early')
+
+    const afterStep = foldAll([
+      ev(0, 'turn/start', { turn: 1 }),
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+      ev(2, 'step/end', { turn: 1, step: 1 }),
+      ev(3, 'web/deepseek-search-llm-request', { query: 'late' }),
+      ev(4, 'step/start', { turn: 1, step: 2 }),
+    ])
+    expect(step(afterStep).searches?.[0]?.requestSeq).toBe(3)
+    expect(turn(afterStep, 1).items.filter(item => item.kind === 'sidecar')).toEqual([])
+
+    const duringFetch = foldAll([
+      ev(0, 'turn/start', { turn: 1 }),
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+      ev(2, 'tool/call', { turn: 1, step: 1, callId: 'c1', name: 'web_search', arguments: '{}' }),
+      ev(3, 'tool/result', { turn: 1, step: 1, message: { toolCallId: 'c1', content: [] } }),
+      ev(4, 'tool/call', { turn: 1, step: 1, callId: 'c2', name: 'web_fetch', arguments: '{}' }),
+      ev(5, 'web/deepseek-search-llm-request', { query: 'not-a-fetch' }),
+    ])
+    const hosted = step(duringFetch)
+    expect(hosted.tools[0]?.searches).toBeUndefined()
+    expect(hosted.tools[1]?.searches).toBeUndefined()
+    expect(hosted.searches?.[0]?.requestSeq).toBe(5)
   })
 
   it('returns the same state for an unknown event and survives a throwing event', () => {

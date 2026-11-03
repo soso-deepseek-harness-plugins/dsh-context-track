@@ -1,6 +1,6 @@
 /** Trace index: sequence numbers and scalars only. No message bodies. */
 
-export const TRACK_STATE_VERSION = 2 as const
+export const TRACK_STATE_VERSION = 4 as const
 
 export type NodeStatus = 'running' | 'ok' | 'error' | 'aborted'
 
@@ -53,6 +53,8 @@ export interface ToolNode {
   childSessionId?: string
   childLabel?: string
   childMode?: string
+  /** Search requests issued while this call was running. */
+  searches?: SidecarNode[]
 }
 
 export interface StepNode {
@@ -73,7 +75,14 @@ export interface StepNode {
   inputSeq: number
   attempts: AttemptRef[]
   tools: ToolNode[]
+  /** Search requests in this step that no tool call owned. */
+  searches?: SidecarNode[]
 }
+
+/** The call that was in progress when a search request was logged. */
+export type SearchOrigin =
+  | { kind: 'tool'; toolId: string; callId: string; name: string; callSeq: number }
+  | { kind: 'step'; stepId: string; step: number; attemptId?: string; attempt?: number; outputSeq?: number }
 
 export interface SidecarNode {
   kind: 'sidecar'
@@ -84,6 +93,8 @@ export interface SidecarNode {
   outputSeq?: number
   endSeq?: number
   compactionId?: string
+  /** Set for a search nested under the step or tool that triggered it. */
+  origin?: SearchOrigin
 }
 
 /** A catalog entry that no tool result named. It stays at the end of its turn. */
@@ -180,11 +191,17 @@ function findInRoot(node: RootNode, id: string): FoundNode | undefined {
     if (item.kind === 'unlinked' && item.id === id) return { kind: 'unlinked', node: item }
     if (item.kind !== 'step') continue
     if (item.id === id) return { kind: 'step', node: item }
+    for (const search of item.searches ?? []) {
+      if (search.id === id) return { kind: 'sidecar', node: search }
+    }
     for (const attempt of item.attempts) {
       if (attempt.id === id) return { kind: 'attempt', node: attempt, step: item }
     }
     for (const tool of item.tools) {
       if (tool.id === id) return { kind: 'tool', node: tool }
+      for (const search of tool.searches ?? []) {
+        if (search.id === id) return { kind: 'sidecar', node: search }
+      }
     }
   }
   return undefined

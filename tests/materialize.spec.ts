@@ -184,6 +184,32 @@ describe('materialize', () => {
     expect(sidecar?.kind).toBe('sidecar')
     if (sidecar?.kind !== 'sidecar') return
     expect(searchDetail(events, sidecar).request).toEqual({ query: 'secret-query' })
+    expect(searchDetail(events, sidecar).source).toBeUndefined()
+  })
+
+  it('reads the triggering tool arguments and the model output for a nested search', () => {
+    const events = [
+      ev(1, 'step/start', { turn: 1, step: 1 }),
+      ev(2, 'assistant/message', {
+        turn: 1, step: 1,
+        message: { role: 'assistant', content: [{ type: 'text', text: 'search for v4' }] },
+      }),
+      ev(3, 'tool/call', { turn: 1, step: 1, callId: 'c1', name: 'web_search', arguments: '{"query":"v4"}' }),
+      ev(4, 'web/deepseek-search-llm-request', { query: 'v4' }),
+    ]
+    const fromTool = searchDetail(events, {
+      kind: 'sidecar', id: 'sidecar:4', purpose: 'web-search', status: 'ok', requestSeq: 4,
+      origin: { kind: 'tool', toolId: 'tool:3', callId: 'c1', name: 'web_search', callSeq: 3 },
+    })
+    expect(fromTool.source).toEqual({ kind: 'tool', name: 'web_search', callId: 'c1', arguments: '{"query":"v4"}' })
+    const fromStep = searchDetail(events, {
+      kind: 'sidecar', id: 'sidecar:2', purpose: 'web-search', status: 'ok', requestSeq: 4,
+      origin: { kind: 'step', stepId: 'step:1:1', step: 1, attemptId: 'attempt:1:1:1', attempt: 1, outputSeq: 2 },
+    })
+    expect(fromStep.source).toMatchObject({
+      kind: 'attempt', step: 1, attempt: 1,
+      output: { role: 'assistant', content: [{ type: 'text', text: 'search for v4' }] },
+    })
   })
 })
 

@@ -33,6 +33,12 @@ function mount(list: ListState, getNode: TracePageProps['getNode'], getTurn?: Tr
   return { host, root }
 }
 
+function setInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 function buttons(host: ParentNode, label: string): HTMLButtonElement[] {
   return [...host.querySelectorAll('button')].filter(button =>
     button.textContent?.includes(label) === true || button.getAttribute('aria-label')?.includes(label) === true,
@@ -244,18 +250,13 @@ describe('trace console', () => {
     expect(total?.textContent).not.toContain('143')
     expect(view.host.textContent).toContain(zh.estimated)
     expect(view.host.textContent).toContain('66.66%')
-    const mark = view.host.querySelector('[data-response-end]') as HTMLElement | null
-    expect(mark?.style.left).toBe('80%')
+    expect(view.host.querySelector('[data-response-end]')).toBeNull()
+    expect(view.host.querySelector('[data-column="bar"]')).toBeNull()
     expect(view.host.querySelector('[data-first="title"]')?.textContent).toContain('800')
     expect(view.host.querySelector('[data-first="title"]')?.textContent).not.toContain('1400')
     expect(view.host.querySelector('[data-first="later"]')?.textContent).toContain('600')
     expect(view.host.querySelector('[data-call]')).toBeNull()
-    await click(buttons(view.host, zh.expand)[0])
-    const stepRow = buttons(view.host, 'step 1')[0]?.closest('.dsh-context-track-row')
-    expect(stepRow?.getAttribute('title')).toBeNull()
-    expect(stepRow?.querySelector('[data-timing]')?.textContent).toContain(zh.noThink)
-    expect(stepRow?.querySelector('[data-timing]')?.textContent).toContain(zh.wait)
-    expect(stepRow?.querySelector('[data-timing]')?.textContent).toContain(zh.think)
+    expect(view.host.querySelector('[data-timing]')).toBeNull()
     const child = view.host.querySelector('[data-subagent="child-1"]')
     expect(child?.textContent).toContain(zh.subagentLine)
     expect(total?.textContent).not.toContain('999')
@@ -400,11 +401,14 @@ describe('trace console', () => {
     expect(getNode).toHaveBeenCalledWith('sess', 'sidecar:3')
   })
 
-  it('reads five bill figures and keeps tool rows out of the bar', async () => {
+  it('reads four bill figures and keeps tool rows out of the bar', async () => {
     const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
     roots.push(view.root)
     await act(async () => { await Promise.resolve() })
-    expect(view.host.querySelectorAll('[data-stat]')).toHaveLength(5)
+    expect(view.host.querySelectorAll('[data-stat]')).toHaveLength(4)
+    expect(view.host.querySelector('[data-stat="reasoning"]')).toBeNull()
+    expect(view.host.textContent).not.toContain(zh.reasoningBlock)
+    expect(view.host.textContent).not.toContain(zh.delta)
     expect(view.host.querySelector('[data-stat="hit"]')?.getAttribute('title')).toBe(zh.hitHint)
     const bar = view.host.querySelector('[data-bill]')
     expect(bar?.querySelectorAll('[data-stat="total"] .dsh-context-track-badge')).toHaveLength(1)
@@ -507,9 +511,75 @@ describe('trace console', () => {
     expect(inspector?.textContent).not.toContain('tool-7')
     expect(inspector?.querySelector('[data-remaining]')?.getAttribute('data-remaining')).toBe('3')
     expect(inspector?.querySelector('[data-call]')).toBeNull()
+    const chart = inspector?.querySelector('[data-category="tools"]') as HTMLElement
+    expect(chart.querySelector('[data-tool="tool-0"] .dsh-context-track-tool-meter i')?.getAttribute('style')).toContain('100%')
+    const search = chart.querySelector('input') as HTMLInputElement
+    await act(async () => {
+      setInputValue(search, 'tool-7')
+    })
+    expect(chart.querySelector('[data-tool="tool-7"]')).not.toBeNull()
+    expect(chart.querySelector('[data-tool="tool-0"]')).toBeNull()
+    expect(chart.textContent).not.toContain(zh.noToolMatch)
+    await act(async () => { setInputValue(search, 'missing-tool') })
+    expect(chart.textContent).toContain(zh.noToolMatch)
+    await act(async () => { setInputValue(search, '') })
+    await click(buttons(chart, zh.sortName)[0])
+    expect([...chart.querySelectorAll('[data-tool]')].map(node => node.getAttribute('data-tool'))).toEqual([
+      'tool-0', 'tool-1', 'tool-2', 'tool-3', 'tool-4',
+    ])
+    expect(chart.getAttribute('data-sort')).toBe('name')
   })
 
-  it('shows the call output above the input and jumps from a tool chip to that tool', async () => {
+  it('tucks tool definitions under the tools row and folds them', async () => {
+    const report = bill()
+    report.window.categories = [
+      { id: 'tools', tokens: 40 },
+      { id: 'user', tokens: 9 },
+    ]
+    const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: report }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+    const row = view.host.querySelector('[data-compose] [data-category="tools"]') as HTMLElement
+    expect(row.getAttribute('data-open')).toBe('false')
+    expect(row.querySelector('[data-tool]')).toBeNull()
+    expect(row.querySelector('h3')).toBeNull()
+    expect(view.host.querySelector('[data-compose] ~ [data-category="tools"]')).toBeNull()
+    const name = row.querySelector('.dsh-context-track-cat-name') as HTMLElement
+    expect(name.firstElementChild?.textContent).toContain(zh.catTools)
+    const toggle = row.querySelector('button[aria-expanded]') as HTMLButtonElement
+    expect(toggle.getAttribute('aria-label')).toBe(zh.catTools)
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    expect(toggle.textContent).not.toContain('▸')
+    await click(toggle)
+    expect(row.getAttribute('data-open')).toBe('true')
+    expect(row.querySelector('[data-tool="echo"]')).not.toBeNull()
+    expect(row.querySelector('[data-nested="true"]')).not.toBeNull()
+    expect(row.querySelector('h3')).toBeNull()
+    expect(row.querySelector('[data-overhead]')?.textContent).toContain(zh.overhead)
+    const bar = row.querySelector('.dsh-context-track-cat') as HTMLElement
+    await act(async () => {
+      bar.click()
+      await Promise.resolve()
+    })
+    expect(row.getAttribute('data-open')).toBe('false')
+    expect(row.querySelector('[data-tool]')).toBeNull()
+  })
+
+  it('keeps tool definitions in the bill chart and out of the detail', async () => {
+    const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await click(buttons(view.host, zh.expand)[0])
+    await click(buttons(view.host, 'step 1')[0])
+    await act(async () => { await Promise.resolve() })
+    const detail = view.host.querySelector('.dsh-context-track-detail')
+    const billPane = view.host.querySelector('[data-bill]')
+    expect(detail?.querySelector('[data-category="tools"]')).toBeNull()
+    expect(detail?.textContent).not.toContain(zh.catTools)
+    expect(billPane?.querySelector('[data-category="tools"] [data-tool="echo"]')).not.toBeNull()
+    expect(view.host.querySelectorAll('[data-category="tools"]')).toHaveLength(1)
+  })
+
+  it('shows the call output after the input and opens a tool from the tree', async () => {
     const track = state([{
       kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 6, startTime: 1000, endTime: 2000,
       items: [{
@@ -563,22 +633,21 @@ describe('trace console', () => {
     const output = detail.querySelector('[data-output]')
     expect(input).not.toBeNull()
     expect(output).not.toBeNull()
-    expect(output!.compareDocumentPosition(input!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(input!.compareDocumentPosition(output!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(detail.textContent).toContain('hello-in')
     expect(detail.textContent).toContain('hello-out')
     expect(output?.querySelector('h1')?.textContent).toContain('hello-out')
-    const call = output?.querySelector('[data-output-call]')
-    expect(call?.querySelector('[data-json="source"]')).not.toBeNull()
-    expect(call?.querySelector('[data-json-token="key"]')?.textContent).toContain('"q"')
+    expect(output?.querySelector('[data-tool-chip]')).toBeNull()
+    expect(output?.querySelector('[data-output-block]')).toBeNull()
+    expect(output?.querySelectorAll('[data-output-call]')).toHaveLength(2)
+    expect(output?.textContent).toContain('echo')
+    expect(output?.textContent).toContain('nope')
+    expect(output?.textContent).toContain('"q"')
+    expect(output?.textContent).toContain('"hi"')
     expect(buttons(view.host, '概览')).toHaveLength(0)
-    expect(view.host.querySelector('[data-tool-chip="c1"] [data-result-line]')?.textContent).toBe('echoed hi')
-    expect(view.host.querySelector('[data-tool-chip="missing"] [data-result-line]')).toBeNull()
-
-    await click(view.host.querySelector('[data-tool-chip="missing"]') as HTMLButtonElement)
-    expect(view.host.querySelector('[data-facts]')).not.toBeNull()
-    expect(view.host.querySelector('[data-tool-chip="missing"] [data-arg-summary]')?.textContent).toContain('{"z":1}')
-
-    await click(view.host.querySelector('[data-tool-chip="c1"]') as HTMLButtonElement)
+    const stepRow = buttons(view.host, 'step 1')[0]?.closest('.dsh-context-track-row') as HTMLElement
+    await click(stepRow.querySelector('button[aria-expanded]') as HTMLButtonElement)
+    await click(buttons(view.host, 'echo')[0])
     await act(async () => { await Promise.resolve() })
     const args = view.host.querySelector('[data-pane="arguments"]')
     const result = view.host.querySelector('[data-pane="result"]')
@@ -630,14 +699,54 @@ describe('trace console', () => {
     expect(prompt?.textContent).not.toContain('sys-9')
     await click(prompt?.querySelector('[data-more]') as HTMLButtonElement)
     expect(prompt?.textContent).toContain('sys-9')
-    const reasoningPanel = view.host.querySelector('[data-output-panel="reasoning"]')
-    expect(reasoningPanel?.hasAttribute('hidden')).toBe(true)
-    await click(view.host.querySelector('[data-output-tab="reasoning"]') as HTMLButtonElement)
-    expect(reasoningPanel?.hasAttribute('hidden')).toBe(false)
-    const reasoning = view.host.querySelector('.dsh-context-track-reasoning')
-    expect(reasoning?.getAttribute('data-folded')).toBe('true')
-    expect(reasoning?.textContent).toContain('think-0')
-    expect(reasoning?.textContent).not.toContain('think-9')
+    const thought = view.host.querySelector('[data-reasoning]')
+    expect(thought?.textContent).toContain(zh.think)
+    expect(thought?.textContent).toContain('think-0')
+    expect(thought?.textContent).not.toContain('think-9')
+    await click(thought?.querySelector('[data-more]') as HTMLButtonElement)
+    expect(thought?.textContent).toContain('think-9')
+    const result = view.host.querySelector('[data-output] [data-category="history"]')
+    expect(thought!.compareDocumentPosition(result!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(result?.textContent).toContain('seen-output')
+    expect(result?.textContent).not.toContain('think-0')
+    expect(result?.textContent).not.toContain(zh.estimated)
+  })
+
+  it('shows reasoning prose and exact output tokens when the model wrote no answer', async () => {
+    const detail: NodeDetail = {
+      kind: 'attempt',
+      status: 'ok',
+      inputSeq: 3,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      tools: [],
+      toolHistory: { tools: [], updates: [] },
+      config: { model: 'chat' },
+      usage: { inputTokens: 20, outputTokens: 152 },
+      output: {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning', text: 'look at the files first' },
+          { type: 'tool-call', id: 'c1', name: 'bash', arguments: '{"cmd":"ls"}' },
+        ],
+      },
+    }
+    const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: detail })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await click(buttons(view.host, zh.expand)[0])
+    await click(buttons(view.host, 'step 1')[0])
+    await act(async () => { await Promise.resolve() })
+    const thought = view.host.querySelector('[data-reasoning]')
+    const card = view.host.querySelector('[data-output] [data-category="history"]')
+    expect(thought?.textContent).toContain(zh.think)
+    expect(thought?.textContent).toContain('look at the files first')
+    expect(thought!.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(card?.textContent).not.toContain('look at the files first')
+    expect(card?.querySelector('[data-output-call]')?.textContent).toContain('bash')
+    expect(card?.textContent).toContain('"cmd"')
+    expect(card?.textContent).not.toContain(zh.exact)
+    expect(card?.textContent).not.toContain(zh.estimated)
+    const tokens = card?.querySelector('[data-output-tokens] [data-basis="usage"]')
+    expect(tokens?.textContent).toBe('token=152')
   })
 
   it('folds a JSON key and restores the structured scroll position', async () => {
@@ -649,7 +758,18 @@ describe('trace console', () => {
     const detail = view.host.querySelector('.dsh-context-track-detail') as HTMLElement
     detail.scrollTop = 28
     await click(view.host.querySelector('[data-view-toggle="json"]') as HTMLButtonElement)
-    const messages = view.host.querySelector('[data-json-key="messages"]') as HTMLButtonElement
+    const inputPart = view.host.querySelector('[data-json-part="input"]')
+    const outputPart = view.host.querySelector('[data-json-part="output"]')
+    expect(inputPart).not.toBeNull()
+    expect(outputPart).not.toBeNull()
+    expect(inputPart!.compareDocumentPosition(outputPart!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(inputPart?.textContent).toContain('"messages"')
+    expect(inputPart?.textContent).toContain('"tools"')
+    expect(inputPart?.textContent).not.toContain('"usage"')
+    expect(outputPart?.textContent).toContain('"output"')
+    expect(outputPart?.textContent).toContain('"usage"')
+    expect(outputPart?.textContent).not.toContain('"messages"')
+    const messages = inputPart?.querySelector('[data-json-key="messages"]') as HTMLButtonElement
     expect(Number(messages.getAttribute('data-count'))).toBeGreaterThan(0)
     expect(messages.getAttribute('aria-expanded')).toBe('true')
     const openKeys = view.host.querySelectorAll('[data-json-key]').length
@@ -661,13 +781,58 @@ describe('trace console', () => {
     expect(view.host.querySelector('[data-facts]')).not.toBeNull()
   })
 
-  it('draws category rows by size, keeps a dash off the total, and splits compaction', async () => {
+  it('keeps a visited view mounted so its folds survive the round trip', async () => {
+    const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await click(buttons(view.host, zh.expand)[0])
+    await click(buttons(view.host, 'step 1')[0])
+    await act(async () => { await Promise.resolve() })
+    expect(view.host.querySelector('[data-view-pane="json"]')).toBeNull()
+    await click(view.host.querySelector('[data-view-toggle="json"]') as HTMLButtonElement)
+    const jsonPane = view.host.querySelector('[data-view-pane="json"]') as HTMLElement
+    const messages = jsonPane.querySelector('[data-json-key="messages"]') as HTMLButtonElement
+    await click(messages)
+    expect(messages.getAttribute('aria-expanded')).toBe('false')
+    const foldedKeys = view.host.querySelectorAll('[data-json-key]').length
+    await click(view.host.querySelector('[data-view-toggle="reading"]') as HTMLButtonElement)
+    expect(jsonPane.hasAttribute('hidden')).toBe(true)
+    expect((view.host.querySelector('[data-view-pane="reading"]') as HTMLElement).hasAttribute('hidden')).toBe(false)
+    await click(view.host.querySelector('[data-view-toggle="json"]') as HTMLButtonElement)
+    expect(jsonPane.hasAttribute('hidden')).toBe(false)
+    expect(messages.getAttribute('aria-expanded')).toBe('false')
+    expect(view.host.querySelectorAll('[data-json-key]').length).toBe(foldedKeys)
+  })
+
+  it('keeps the detail body mounted while the pane is collapsed', async () => {
+    const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await click(buttons(view.host, zh.expand)[0])
+    await click(buttons(view.host, 'step 1')[0])
+    await act(async () => { await Promise.resolve() })
+    const toggle = view.host.querySelector('[data-detail-toggle]') as HTMLButtonElement
+    const pane = view.host.querySelector('.dsh-context-track-detail') as HTMLElement
+    const body = view.host.querySelector('.dsh-context-track-detail-body') as HTMLElement
+    expect(body.hasAttribute('hidden')).toBe(false)
+    await click(toggle)
+    expect(pane.getAttribute('data-collapsed')).toBe('true')
+    expect(body.hasAttribute('hidden')).toBe(true)
+    expect(body.querySelector('[data-facts]')).not.toBeNull()
+    await click(toggle)
+    expect(pane.getAttribute('data-collapsed')).toBeNull()
+    expect(body.hasAttribute('hidden')).toBe(true)
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 240) }) })
+    expect(body.hasAttribute('hidden')).toBe(false)
+    expect(body.querySelector('[data-facts]')).not.toBeNull()
+  })
+
+  it('puts tool rows after the user message, keeps a dash off the total, and splits compaction', async () => {
     const report = bill()
     report.consumption.reasoning = { basis: 'absent' }
-    report.consumption.title = { basis: 'absent' }
+    report.consumption.title = { basis: 'usage', value: 12 }
     report.window.categories = [
       { id: 'user', tokens: 9 },
       { id: 'tools', tokens: 40 },
+      { id: 'tool-results', tokens: 50 },
       { id: 'skill', tokens: 3 },
     ]
     const track = state([{
@@ -688,22 +853,24 @@ describe('trace console', () => {
     roots.push(view.root)
     await act(async () => { await Promise.resolve() })
     const rows = [...view.host.querySelectorAll('[data-compose] [data-category]')]
-    expect(rows.map(row => row.getAttribute('data-category'))).toEqual(['tools', 'user', 'skill'])
-    expect(rows[0]?.getAttribute('data-hue')).toBe('tools')
-    expect(rows[1]?.getAttribute('data-hue')).toBe('neutral')
-    expect(rows[1]?.textContent).toContain(zh.catUser)
-    expect(rows[1]?.textContent).toContain('9')
+    expect(rows.map(row => row.getAttribute('data-category'))).toEqual(['user', 'tool-results', 'tools', 'skill'])
+    expect(rows[0]?.getAttribute('data-hue')).toBe('neutral')
+    expect(rows[0]?.textContent).toContain(zh.catUser)
+    expect(rows[0]?.textContent).toContain('9')
+    expect(rows[0]?.querySelector('i')?.getAttribute('style')).toContain('18%')
+    expect(rows[1]?.getAttribute('data-hue')).toBe('results')
+    expect(rows[1]?.querySelector('i')?.getAttribute('style')).toContain('100%')
+    expect(rows[2]?.getAttribute('data-hue')).toBe('tools')
     expect(view.host.querySelector('[data-stat="total"]')?.textContent).toContain('103')
     expect(view.host.querySelector('[data-stat="total"]')?.textContent).toContain(zh.exact)
     expect(view.host.querySelector('[data-compose] .dsh-context-track-badge')).toBeNull()
-    expect(view.host.querySelector('[data-stat="reasoning"]')?.textContent).toContain('-')
+    expect(view.host.querySelector('[data-stat="reasoning"]')).toBeNull()
+    expect(view.host.querySelector('[data-inspector="turn"]')?.textContent).not.toContain(zh.reasoningBlock)
+    expect(view.host.querySelector('[data-inspector="turn"]')?.textContent).not.toContain(zh.delta)
+    expect(view.host.querySelector('[data-inspector="turn"] [data-session-name]')).toBeNull()
+    expect(view.host.querySelector('[data-inspector="turn"]')?.textContent).not.toContain(zh.titleExcluded)
+    expect(view.host.querySelector('[data-inspector="turn"]')?.textContent).not.toContain('天气会话')
     expect(view.host.textContent).toContain('400 ms')
-    const naming = view.host.querySelector('[data-session-name]')
-    expect(naming?.textContent).toContain(zh.title)
-    expect(naming?.textContent).toContain('-')
-    expect(naming?.textContent).toContain(zh.titleExcluded)
-    expect(naming?.textContent).toContain('天气会话')
-    expect(naming?.textContent).not.toContain('103')
     const compaction = view.host.querySelector('[data-compaction]')
     expect(compaction?.textContent).toContain(zh.reclaimed)
     expect(compaction?.textContent).toContain('30')
@@ -763,22 +930,26 @@ describe('trace console', () => {
     expect(live.host.querySelector('[data-output="unseen"]')?.textContent).not.toContain('-')
   })
 
-  it('says the session name is missing when the log has not adopted one', async () => {
+  it('leaves session naming out of the turn bill', async () => {
     const report = bill()
     report.consumption.title = { basis: 'absent' }
     const track = state([{
       kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 2,
       items: [{ kind: 'sidecar', id: 'side:title', purpose: 'session-title', status: 'ok', requestSeq: 1 }],
     }])
-    const view = mount(session(track), vi.fn(async () => ({
+    const getNode = vi.fn(async () => ({
       ok: true as const,
       value: { kind: 'sidecar' as const, purpose: 'session-title' as const, status: 'ok', system: '', messages: [], route: '', maxTokens: 8 },
-    })), async () => ({ ok: true as const, value: report }))
+    }))
+    const view = mount(session(track), getNode, async () => ({ ok: true as const, value: report }))
     roots.push(view.root)
     await act(async () => { await Promise.resolve() })
-    expect(view.host.querySelector('[data-session-name]')?.textContent).toContain(zh.titleMissing)
-    expect(view.host.querySelector('[data-session-name]')?.textContent).toContain(zh.titleExcluded)
-    expect(view.host.querySelector('[data-session-name]')?.textContent).toContain('-')
+    const billPane = view.host.querySelector('[data-inspector="turn"]')
+    expect(billPane?.querySelector('[data-session-name]')).toBeNull()
+    expect(billPane?.textContent).not.toContain(zh.title)
+    expect(billPane?.textContent).not.toContain(zh.titleExcluded)
+    expect(billPane?.textContent).not.toContain(zh.titleMissing)
+    expect(getNode).not.toHaveBeenCalled()
   })
 
   it('reads messages as markdown, clamps prose, and opens one message as JSON', async () => {
@@ -851,7 +1022,9 @@ describe('trace console', () => {
     const table = prompt?.querySelector('table')
     expect(table?.textContent).toContain('system')
     expect(table?.textContent).toContain(zh.catSystem)
-    expect(table?.textContent).toContain(zh.estimated)
+    expect(table?.textContent).toContain('token≈')
+    expect(table?.textContent).not.toContain(zh.estimated)
+    expect(table?.textContent).not.toContain(zh.exact)
     expect(table?.textContent).not.toContain('deepseek')
     expect(table?.textContent).not.toContain(zh.source)
     const facts = view.host.querySelector('[data-facts]')
@@ -883,6 +1056,7 @@ describe('trace console', () => {
     pane.scrollTop = 18
     await click(userCard?.querySelector('[data-open-json]') as HTMLButtonElement)
     expect(view.host.querySelector('[data-view-toggle="json"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(view.host.querySelector('[data-json-split]')).toBeNull()
     const json = view.host.querySelector('[data-json-view]')
     expect(json?.textContent).toContain('user-0')
     expect(json?.textContent).not.toContain('<skill_content>')
@@ -923,7 +1097,11 @@ describe('trace console', () => {
       if (id === 'side:title') {
         return { ok: true as const, value: {
           kind: 'sidecar' as const, purpose: 'session-title' as const, status: 'ok',
-          system: '', messages: [], route: '', maxTokens: 8, output: 'Named session',
+          system: 'Name this chat',
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'talked about weather' }] }],
+          route: { provider: 'deepseek', model: 'flash' },
+          maxTokens: 16,
+          output: 'Named session',
         } }
       }
       return { ok: true as const, value: attemptDetail() }
@@ -939,19 +1117,134 @@ describe('trace console', () => {
     expect(summary?.querySelector('li')?.textContent).toContain('kept')
     await click(buttons(tree, zh.title)[0])
     await act(async () => { await Promise.resolve() })
-    expect(view.host.querySelector('.dsh-context-track-detail')?.textContent).toContain('Named session')
+    const title = view.host.querySelector('[data-title-body]')
+    const titleInput = title?.querySelector('[data-input]')
+    const titleOutput = title?.querySelector('[data-output]')
+    expect(titleInput?.textContent).toContain('Name this chat')
+    expect(titleInput?.textContent).toContain('talked about weather')
+    expect(titleOutput?.textContent).toContain('Named session')
+    expect(titleInput!.compareDocumentPosition(titleOutput!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(title?.querySelector('[data-fact="model"]')?.textContent).toContain('flash')
+    expect(title?.querySelector('[data-fact="provider"]')?.textContent).toContain('deepseek')
     await click(buttons(tree, zh.expand).find(button => button.parentElement?.textContent?.includes('step')))
     await click(buttons(tree, 'bash')[0])
     await act(async () => { await Promise.resolve() })
     const args = view.host.querySelector('[data-pane="arguments"]')
     const result = view.host.querySelector('[data-pane="result"]')
     expect(args?.textContent).toContain('"cmd"')
+    expect(args?.querySelector('[data-json="source"]')).not.toBeNull()
     expect(result?.textContent).toContain('plain result')
+    expect(result?.querySelector('[data-json="plain"]')?.textContent).toBe('plain result')
+    expect(result?.querySelector('.dsh-context-track-prose')).toBeNull()
     expect(args!.compareDocumentPosition(result!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(view.host.querySelector('[data-open-child]')).not.toBeNull()
   })
 
-  it('aligns tree columns, names the chevron, and keeps timing in the document', async () => {
+  it('keeps the session-title input when the name is still missing', async () => {
+    const track = state([{
+      kind: 'turn', id: 'turn:1', turn: 1, status: 'running', startSeq: 0, startTime: 1000,
+      items: [{ kind: 'sidecar', id: 'side:title', purpose: 'session-title', status: 'running', requestSeq: 1 }],
+    }])
+    const view = mount(session(track), vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        kind: 'sidecar' as const, purpose: 'session-title' as const, status: 'running',
+        system: 'Name this chat',
+        messages: [{ role: 'user', content: 'hello there' }],
+        route: {}, maxTokens: 8,
+      },
+    })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await click(buttons(view.host, zh.expand)[0])
+    await click(buttons(view.host, zh.title)[0])
+    await act(async () => { await Promise.resolve() })
+    const title = view.host.querySelector('[data-title-body]')
+    expect(title?.querySelector('[data-input]')?.textContent).toContain('hello there')
+    expect(title?.querySelector('[data-input]')?.textContent).toContain('Name this chat')
+    expect(title?.querySelector('[data-session-name]')?.textContent).toContain(zh.titleMissing)
+    const input = title?.querySelector('[data-input]')
+    const output = title?.querySelector('[data-output]')
+    expect(input!.compareDocumentPosition(output!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('renders the search request as a query fact and highlighted JSON', async () => {
+    const track = state([{
+      kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 4, startTime: 1000, endTime: 2000,
+      items: [
+        { kind: 'sidecar', id: 'side:search', purpose: 'web-search', status: 'ok', requestSeq: 2 },
+        { kind: 'sidecar', id: 'side:gone', purpose: 'web-search', status: 'ok', requestSeq: 3 },
+      ],
+    }])
+    const getNode = vi.fn(async (_session: string, id: string) => {
+      if (id === 'side:search') {
+        return { ok: true as const, value: {
+          kind: 'sidecar' as const, purpose: 'web-search' as const, status: 'ok',
+          request: { query: 'deepseek v4 发布', hits: 3 },
+        } }
+      }
+      return { ok: true as const, value: {
+        kind: 'sidecar' as const, purpose: 'web-search' as const, status: 'ok', request: undefined,
+      } }
+    })
+    const view = mount(session(track), getNode, async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await click(buttons(view.host, zh.expand)[0])
+    const tree = view.host.querySelector('.dsh-context-track-tree') as HTMLElement
+    await click(buttons(tree, zh.search)[0])
+    await act(async () => { await Promise.resolve() })
+    const body = view.host.querySelector('[data-search-body]')
+    expect(body?.textContent).toContain(zh.query)
+    expect(body?.textContent).toContain('deepseek v4 发布')
+    expect(body?.querySelector('[data-json-token]')).not.toBeNull()
+    expect(body?.querySelector('.dsh-context-track-prose')).toBeNull()
+    await click(buttons(tree, zh.search)[1])
+    await act(async () => { await Promise.resolve() })
+    const gone = view.host.querySelector('[data-search-body]')
+    expect(gone?.textContent).toContain(zh.notSeen)
+    expect(gone?.querySelector('[data-json-token]')).toBeNull()
+  })
+
+  it('nests a search under the tool that triggered it and shows that call’s arguments', async () => {
+    const modelStep = step([{ id: 'attempt:1:1:1', status: 'ok' }])
+    modelStep.tools = [{
+      kind: 'tool', id: 'tool:3', callId: 'c1', name: 'web_search', status: 'ok', callSeq: 3,
+      searches: [{
+        kind: 'sidecar', id: 'side:search', purpose: 'web-search', status: 'ok', requestSeq: 4,
+        origin: { kind: 'tool', toolId: 'tool:3', callId: 'c1', name: 'web_search', callSeq: 3 },
+      }],
+    }]
+    const track = state([{
+      kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 5, startTime: 1000, endTime: 2000,
+      items: [modelStep],
+    }])
+    const view = mount(session(track), vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        kind: 'sidecar' as const, purpose: 'web-search' as const, status: 'ok',
+        request: { query: 'deepseek v4' },
+        source: { kind: 'tool' as const, name: 'web_search', callId: 'c1', arguments: { query: 'deepseek v4' } },
+      },
+    })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await click(buttons(view.host, zh.expand)[0])
+    const tree = view.host.querySelector('.dsh-context-track-tree') as HTMLElement
+    const stepRow = buttons(tree, 'step 1')[0]?.closest('.dsh-context-track-row') as HTMLElement
+    await click(stepRow.querySelector('button[aria-expanded]') as HTMLButtonElement)
+    const toolRow = buttons(tree, 'web_search')[0]?.closest('.dsh-context-track-row') as HTMLElement
+    const searchRow = buttons(tree, zh.search)[0]?.closest('.dsh-context-track-row') as HTMLElement
+    const toolDepth = Number((toolRow.querySelector('.dsh-context-track-cluster') as HTMLElement).dataset.depth)
+    const searchDepth = Number((searchRow.querySelector('.dsh-context-track-cluster') as HTMLElement).dataset.depth)
+    expect(searchDepth).toBeGreaterThan(toolDepth)
+    await click(buttons(tree, zh.search)[0])
+    await act(async () => { await Promise.resolve() })
+    const source = view.host.querySelector('[data-pane="source"]')
+    expect(source?.textContent).toContain(zh.trigger)
+    expect(source?.querySelector('[data-search-trigger]')?.textContent).toBe('web_search')
+    expect(source?.textContent).toContain('deepseek v4')
+    expect(source?.querySelector('[data-json-token]')).not.toBeNull()
+  })
+
+  it('aligns tree columns and names the chevron', async () => {
     const track = state([{
       kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 4, startTime: 1000, endTime: 5000,
       items: [{
@@ -964,15 +1257,7 @@ describe('trace console', () => {
         kind: 'sidecar', id: 'side:1', purpose: 'web-search', status: 'ok', requestSeq: 3,
       }],
     }])
-    const report = bill()
-    report.timing.calls = [{
-      attemptId: 'attempt:1:1:1', label: '1',
-      wait: { basis: 'usage', value: 100 },
-      think: { basis: 'usage', value: 400 },
-      delayMs: 25,
-      firstVisible: 1500,
-    }]
-    const view = mount(session(track), vi.fn(), async () => ({ ok: true as const, value: report }))
+    const view = mount(session(track), vi.fn(), async () => ({ ok: true as const, value: bill() }))
     roots.push(view.root)
     await act(async () => { await Promise.resolve() })
     const tree = view.host.querySelector('.dsh-context-track-tree') as HTMLElement
@@ -992,22 +1277,14 @@ describe('trace console', () => {
     expect(stepRow.querySelector('.dsh-context-track-label')?.textContent).toContain('deepseek-flash')
     expect(stepRow.querySelector('[data-column="tokens"]')?.textContent).not.toContain('deepseek-flash')
     expect(stepRow.querySelector('[data-column="tokens"]')?.textContent).toContain('→')
-    const timing = stepRow.querySelector('[data-timing]')
-    expect(timing?.textContent).toContain(zh.wait)
-    expect(timing?.textContent).toContain(zh.think)
-    expect(timing?.textContent).toContain(zh.firstResponse)
-    expect(timing?.textContent).toContain('delayMs 25')
-    expect(stepRow.getAttribute('title')).toBeNull()
+    expect(stepRow.querySelector('[data-timing]')).toBeNull()
+    expect(stepRow.querySelector('[data-column="bar"]')).toBeNull()
     await click(stepRow.querySelector('button[aria-expanded]') as HTMLButtonElement)
     const toolRow = buttons(view.host, 'bash')[0]?.closest('.dsh-context-track-row') as HTMLElement
     const sideRow = buttons(view.host.querySelector('.dsh-context-track-tree') as HTMLElement, zh.search)[0]?.closest('.dsh-context-track-row') as HTMLElement
     const attemptRow = buttons(view.host, 'llm_call 1')[0]?.closest('.dsh-context-track-row') as HTMLElement
-    expect(toolRow.querySelector('[data-column="bar"]')?.getAttribute('data-kind')).toBe('tool')
-    expect(stepRow.querySelector('[data-column="bar"]')?.getAttribute('data-kind')).toBe('step')
-    expect(attemptRow.querySelector('[data-column="bar"]')?.getAttribute('data-kind')).toBe('step')
-    expect(sideRow.querySelector('[data-column="bar"]')?.getAttribute('data-kind')).toBe('sidecar')
     expect(columnIndex(turnRow, 'duration')).toBe(columnIndex(toolRow, 'duration'))
-    expect(columnIndex(stepRow, 'bar')).toBe(columnIndex(sideRow, 'bar'))
+    expect(columnIndex(stepRow, 'tokens')).toBe(columnIndex(sideRow, 'tokens'))
     expect(sideRow.querySelector('[data-column="tokens"]')?.textContent?.trim()).toBe('')
     const turnCluster = turnRow.querySelector('.dsh-context-track-cluster') as HTMLElement
     const toolCluster = toolRow.querySelector('.dsh-context-track-cluster') as HTMLElement

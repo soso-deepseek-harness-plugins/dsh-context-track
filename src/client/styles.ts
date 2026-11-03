@@ -43,6 +43,8 @@ export const traceCss = `
   /* auto would keep each column as tall as its text, so overflow never starts. */
   min-height: 0;
   overflow: auto;
+  /* A scrollbar popping in would otherwise shove the wrapped text sideways. */
+  scrollbar-gutter: stable;
   padding: 0.75rem;
 }
 .dsh-context-track-detail {
@@ -64,10 +66,9 @@ export const traceCss = `
 }
 .dsh-context-track-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 4.75rem 8.5rem 5.5rem;
+  grid-template-columns: minmax(0, 1fr) 4.75rem 8.5rem;
   align-items: center;
   column-gap: 0.5rem;
-  position: relative;
   min-width: 0;
   width: 100%;
   text-align: start;
@@ -108,8 +109,7 @@ export const traceCss = `
   min-width: 0;
 }
 .dsh-context-track-card,
-.dsh-context-track-block,
-.dsh-context-track-tool-chip {
+.dsh-context-track-block {
   background: var(--dsw-alias-bg-layer-2);
   border: 1px solid var(--dsw-alias-border-l2);
 }
@@ -364,60 +364,87 @@ export const traceCss = `
   border-radius: 999px;
   background: currentColor;
 }
-.dsh-context-track-bar {
-  position: relative;
-  width: 100%;
-  height: 0.45rem;
-  background: var(--dsw-alias-bg-layer-2);
-}
-.dsh-context-track-bar i {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: var(--dsw-alias-label-secondary);
-}
-.dsh-context-track-bar[data-kind="step"] i { background: var(--dsh-cat-history); }
-.dsh-context-track-bar[data-kind="tool"] i { background: var(--dsh-cat-tools); }
-.dsh-context-track-bar[data-kind="sidecar"] i { background: var(--dsh-cat-skill); }
-.dsh-context-track-bar[data-kind="unlinked"] i { background: var(--dsh-cat-injection); }
-.dsh-context-track-timing {
-  position: absolute;
-  z-index: 2;
-  inset-inline-start: 0;
-  top: 100%;
-  padding: 0.15rem 0.35rem;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 0.75rem;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-}
-.dsh-context-track-row:hover .dsh-context-track-timing,
-.dsh-context-track-row:focus-within .dsh-context-track-timing {
-  opacity: 1;
-}
-.dsh-context-track-response {
-  position: absolute;
-  top: -0.2rem;
-  bottom: -0.2rem;
-  width: 2px;
-  background: var(--dsw-alias-label-primary);
-}
 .dsh-context-track-cats {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: grid;
+  /* Shared tracks: the tools caret sits after its label and cannot push that row alone. */
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: 0.5rem;
+  row-gap: 0.35rem;
   margin: 0;
   padding: 0;
   list-style: none;
+  min-width: 0;
 }
-.dsh-context-track-cats li {
+.dsh-context-track-cats > li {
   display: grid;
-  grid-template-columns: 6.5rem 1fr auto;
-  gap: 0.5rem;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   min-width: 0;
+  row-gap: 0.25rem;
+}
+.dsh-context-track-cat-line {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-width: 0;
+  min-height: 1.35rem;
+  padding-block: 0.1rem;
+  border-radius: 0.35rem;
+}
+.dsh-context-track-cat-line[data-fold="true"] {
+  cursor: pointer;
+}
+.dsh-context-track-cat-line[data-fold="true"]:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-cat-name {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.28rem;
+  min-width: 0;
+}
+.dsh-context-track-cat-name > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track button.dsh-context-track-cat-toggle {
+  display: inline-grid;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-context-track-cat-line[data-fold="true"]:hover button.dsh-context-track-cat-toggle,
+.dsh-context-track-cats > li[data-open="true"] button.dsh-context-track-cat-toggle,
+.dsh-context-track button.dsh-context-track-cat-toggle:focus-visible {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track button.dsh-context-track-cat-toggle:focus-visible {
+  outline: 1px solid var(--dsw-alias-label-tertiary);
+  outline-offset: 1px;
+}
+.dsh-context-track-cat-caret {
+  width: 0.7rem;
+  height: 0.7rem;
+  transition: transform 160ms ease;
+}
+.dsh-context-track-cats > li[data-open="true"] .dsh-context-track-cat-caret {
+  transform: rotate(90deg);
+}
+.dsh-context-track-cat-line > .dsh-context-track-num {
+  justify-self: end;
 }
 .dsh-context-track-cat {
   display: block;
@@ -435,13 +462,136 @@ export const traceCss = `
 .dsh-context-track-cats [data-hue="history"] i { background: var(--dsh-cat-history); }
 .dsh-context-track-cats [data-hue="injection"] i { background: var(--dsh-cat-injection); }
 .dsh-context-track-cats [data-hue="neutral"] i { background: var(--dsh-cat-neutral); }
+.dsh-context-track-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0.15rem 0 0.35rem;
+}
+.dsh-context-track-cats li > .dsh-context-track-tools {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0 0.2rem;
+}
+.dsh-context-track-tools-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.dsh-context-track-tools-head h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+.dsh-context-track-tools-count {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.dsh-context-track-tools-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.dsh-context-track-tools-bar input {
+  flex: 1 1 6.5rem;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 0.75rem;
+}
+.dsh-context-track-tools-bar input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+.dsh-context-track-tools-bar input:focus {
+  outline: 1px solid var(--dsw-alias-label-tertiary);
+  outline-offset: 1px;
+}
+.dsh-context-track-tools-sort {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 0.1rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track-tools-sort button {
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-context-track-tools-sort button[aria-pressed="true"] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-tool-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dsh-context-track-tool-chart li {
+  display: grid;
+  grid-template-columns: minmax(4.25rem, 7rem) minmax(2rem, 1fr) auto;
+  gap: 0.4rem;
+  align-items: center;
+  min-width: 0;
+}
+.dsh-context-track-tool-name {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track-tool-meter {
+  display: block;
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track-tool-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dsh-cat-tools);
+}
+.dsh-context-track-tools button[data-remaining] {
+  align-self: flex-start;
+  padding: 0.08rem 0.45rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-context-track-tools button[data-remaining]:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-tools-overhead {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.75rem;
+}
 .dsh-context-track button.dsh-context-track-gap {
   background: transparent;
   border: 1px dashed var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
 }
-.dsh-context-track button.dsh-context-track-chip,
-.dsh-context-track button.dsh-context-track-tool-chip {
+.dsh-context-track button.dsh-context-track-chip {
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   padding: 0.1rem 0.4rem;
@@ -449,78 +599,43 @@ export const traceCss = `
 .dsh-context-track button.dsh-context-track-chip[aria-pressed="true"] {
   background: var(--dsw-alias-interactive-bg-hover);
 }
-.dsh-context-track button.dsh-context-track-tool-chip {
+.dsh-context-track-output-meta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
-  margin: 0 0 0.5rem;
-  padding: 0.35rem 0.5rem;
-  text-align: start;
-}
-.dsh-context-track [data-call-body] {
-  margin: 0.35rem 0 0.15rem 1.35rem;
-}
-.dsh-context-track-call-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-}
-.dsh-context-track-call-head .dsh-context-track-tool-chip {
-  flex: 1 1 auto;
-  margin: 0;
-}
-.dsh-context-track-call + .dsh-context-track-call {
-  margin-top: 0.45rem;
-}
-.dsh-context-track-output-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.75rem;
-  margin-bottom: 0.55rem;
-}
-.dsh-context-track-output-head h3 {
-  margin: 0;
-  color: var(--dsw-alias-label-primary);
-  font-size: 0.85rem;
-}
-.dsh-context-track-output-title {
-  flex: 1 1 12rem;
-  min-width: 0;
-}
-.dsh-context-track-output-summary {
-  display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.35rem 0.55rem;
-  margin: 0.15rem 0 0;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 0.75rem;
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
 }
-.dsh-context-track-output-summary > span:first-child {
-  color: var(--dsw-alias-label-primary);
+.dsh-context-track-output-meta h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.72rem;
   font-weight: 650;
 }
-.dsh-context-track-output-head button[data-open-json] {
+.dsh-context-track-output-meta .dsh-context-track-num {
+  font-size: 0.75rem;
+}
+.dsh-context-track-output-tokens {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.75rem;
+}
+.dsh-context-track-output-call {
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.dsh-context-track-output-call-name {
+  margin: 0 0 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+.dsh-context-track-output-call [data-json-view] {
   margin: 0;
 }
-.dsh-context-track-segments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0 0 0.6rem;
-}
-.dsh-context-track-segments button {
-  padding: 0.12rem 0.55rem;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  color: var(--dsw-alias-label-secondary);
-}
-.dsh-context-track-segments button[aria-selected="true"] {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
+.dsh-context-track-detail .dsh-context-track-output-meta button[data-open-json] {
+  margin: 0 0 0 auto;
 }
 .dsh-context-track-reasoning {
   color: var(--dsw-alias-label-tertiary);
@@ -718,6 +833,8 @@ export const traceCss = `
 .dsh-context-track[data-layout="narrow"] .dsh-context-track-body {
   flex-direction: column;
   overflow: auto;
+  /* Narrow mode scrolls one shared column; a taller view must not shift it sideways. */
+  scrollbar-gutter: stable;
 }
 .dsh-context-track[data-layout="narrow"] .dsh-context-track-split {
   flex: 0 0 auto;
@@ -739,6 +856,33 @@ export const traceCss = `
 .dsh-context-track-detail {
   display: flex;
   flex-direction: column;
+  /* Collapsing flips flex-grow and flex-basis; transitioning both turns the jump into a slide. */
+  transition: flex-grow 180ms ease, flex-basis 180ms ease, padding 180ms ease;
+}
+.dsh-context-track-detail-body {
+  min-width: 0;
+  min-height: 0;
+}
+/* A fresh pane fades in instead of popping, so a swap never reads as a flicker. */
+.dsh-context-track-detail-body:not([hidden]),
+.dsh-context-track-detail [data-view-pane]:not([hidden]) {
+  animation: dsh-context-track-pane-in 150ms ease-out;
+}
+@keyframes dsh-context-track-pane-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dsh-context-track-detail {
+    transition: none;
+  }
+  .dsh-context-track-detail-body:not([hidden]),
+  .dsh-context-track-detail [data-view-pane]:not([hidden]) {
+    animation: none;
+  }
+  .dsh-context-track-cat-caret {
+    transition: none;
+  }
 }
 .dsh-context-track-detail-toggle {
   align-self: flex-end;

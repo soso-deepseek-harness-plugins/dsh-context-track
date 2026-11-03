@@ -4,7 +4,7 @@
  */
 import type { SessionEvent, SessionMessageProjection } from '@deepseek-ai/dsh-session'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session'
-import type { CompactionDetail, InstructionRecord, SearchDetail, TitleDetail } from '../shared/detail.js'
+import type { CompactionDetail, InstructionRecord, SearchDetail, SearchSource, TitleDetail } from '../shared/detail.js'
 import type { SidecarNode } from '../shared/model.js'
 import { materializePrefix } from './materialize.js'
 
@@ -114,11 +114,39 @@ export function compactionOrdinal(events: readonly SessionEvent[], requestSeq: n
 
 export function searchDetail(events: readonly SessionEvent[], node: SidecarNode): SearchDetail {
   const request = events.find(event => event.seq === node.requestSeq && (event.type as string) === 'web/deepseek-search-llm-request')
+  const source = searchSource(events, node)
   return {
     kind: 'sidecar',
     purpose: 'web-search',
     status: node.status,
     request: request?.data,
+    ...(source !== undefined ? { source } : {}),
+  }
+}
+
+/** Arguments of the tool, or the model output, that was in progress for this search. */
+function searchSource(events: readonly SessionEvent[], node: SidecarNode): SearchSource | undefined {
+  const origin = node.origin
+  if (origin?.kind === 'tool') {
+    const call = events.find(event => event.seq === origin.callSeq && (event.type as string) === 'tool/call')
+    const data = objectData(call)
+    return {
+      kind: 'tool',
+      name: origin.name,
+      callId: origin.callId,
+      ...(data?.arguments !== undefined ? { arguments: data.arguments } : {}),
+    }
+  }
+  if (origin?.kind !== 'step') return undefined
+  const message = origin.outputSeq === undefined
+    ? undefined
+    : events.find(event => event.seq === origin.outputSeq && (event.type as string) === 'assistant/message')
+  const output = objectData(message)?.message
+  return {
+    kind: 'attempt',
+    step: origin.step,
+    ...(origin.attempt !== undefined ? { attempt: origin.attempt } : {}),
+    ...(output !== undefined ? { output } : {}),
   }
 }
 

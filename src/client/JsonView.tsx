@@ -13,7 +13,14 @@ interface Fold {
   parsed: Record<string, boolean>
 }
 
-export function JsonView({ value, t }: { value: unknown; t: (key: TrackKey) => string }): ReactNode {
+export function JsonView({
+  value, t, chrome = true,
+}: {
+  value: unknown
+  t: (key: TrackKey) => string
+  /** Copy and expand controls. Inline fragments leave them off. */
+  chrome?: boolean
+}): ReactNode {
   const text = typeof value === 'string' ? value : stringify(value)
   const parsed = tryParse(text)
   const [fold, setFold] = useState<Fold>({ text, bulk: 'default', overrides: {}, parsed: {} })
@@ -36,7 +43,7 @@ export function JsonView({ value, t }: { value: unknown; t: (key: TrackKey) => s
 
   return (
     <div data-json-view>
-      <div className="dsh-context-track-json-tools">
+      {chrome ? <div className="dsh-context-track-json-tools">
         <button type="button" data-copy-json onClick={() => { void copyText(copyValue) }}>
           {t('copyJson')}
         </button>
@@ -56,7 +63,7 @@ export function JsonView({ value, t }: { value: unknown; t: (key: TrackKey) => s
             </button>
           </div>
         ) : null}
-      </div>
+      </div> : null}
       {parsed === undefined ? (
         <pre className="dsh-context-track-pre" data-json="plain">{text}</pre>
       ) : (

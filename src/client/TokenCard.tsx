@@ -1,5 +1,5 @@
 /** Turn bill. Figures, category rows, clocks, and sidecar cards stay visible beside the tree. */
-import type { ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import type { CategoryId } from '../shared/classify.js'
 import { formatHitPercent, sessionUsage, type Figure } from '../shared/figures.js'
 import type { TrackState } from '../shared/model.js'
@@ -20,6 +20,21 @@ const HUE: Record<CategoryId, string> = {
   user: 'neutral',
 }
 
+/** Tool rows follow the user row. The rest of the window stays ranked by size. */
+const AFTER_USER = new Set<CategoryId>(['tool-results', 'tools'])
+
+function bySize(left: { id: string; tokens: number }, right: { id: string; tokens: number }): number {
+  return right.tokens - left.tokens || left.id.localeCompare(right.id)
+}
+
+export function composeRows<T extends { id: CategoryId; tokens: number }>(categories: readonly T[]): T[] {
+  const head = categories.filter(category => !AFTER_USER.has(category.id)).sort(bySize)
+  const tail = categories.filter(category => AFTER_USER.has(category.id)).sort(bySize)
+  const userAt = head.findIndex(category => category.id === 'user')
+  if (userAt < 0) return [...head, ...tail]
+  return [...head.slice(0, userAt + 1), ...tail, ...head.slice(userAt + 1)]
+}
+
 export function reclaimedOf(events: readonly ContextEvent[]): Figure | undefined {
   const parts = events.filter(event => event.kind === 'compaction' && event.tokens?.value !== undefined)
   if (parts.length === 0) return undefined
@@ -36,7 +51,6 @@ export function compactionPresent(report: TurnReport): boolean {
 export function TokenCard({
   report,
   activeSeq,
-  titleName,
   trackOf,
   t,
   onGap,
@@ -44,17 +58,19 @@ export function TokenCard({
 }: {
   report: TurnReport
   activeSeq?: number
-  /** Adopted session name, when the log already has one. */
-  titleName?: string
   trackOf: (sessionId: string) => TrackState | undefined
   t: (key: TrackKey) => string
   onGap: (seq: number) => void
   children?: ReactNode
 }): ReactNode {
   const { consumption, window } = report
-  const ranked = [...window.categories].sort((left, right) => right.tokens - left.tokens || left.id.localeCompare(right.id))
-  const peak = ranked[0]?.tokens ?? 0
+  const ranked = composeRows(window.categories)
+  const peak = ranked.reduce((max, category) => Math.max(max, category.tokens), 0)
   const safe = peak > 0 ? peak : 1
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const toolDetail = window.toolDefinitions.length > 0 || window.definitionOverhead !== undefined
+  const toolsFold = toolDetail && ranked.some(category => category.id === 'tools')
+  const toggleTools = () => { setToolsOpen(open => !open) }
   const reclaimed = reclaimedOf(report.events)
   const hitText = (value: number) => ({ text: formatHitPercent(value), full: formatHitPercent(value), abbreviated: false })
   return (
@@ -69,33 +85,60 @@ export function TokenCard({
         <p data-stat="output">
           {t('output')} <FigureView figure={consumption.output} t={t} showBasis={false} pending={report.outputPending} />
         </p>
-        <p data-stat="reasoning">
-          {t('reasoningBlock')} <FigureView figure={consumption.reasoning} t={t} showBasis={false} />
-        </p>
         <p data-stat="hit" title={t('hitHint')}>
           {t('hitRate')} <FigureView figure={consumption.hitRate} t={t} showBasis={false} format={hitText} />
         </p>
       </div>
       <p className="dsh-context-track-muted">{t('compose')}</p>
       <ol className="dsh-context-track-cats" data-compose>
-        {ranked.map(category => (
-          <li key={category.id} data-category={category.id} data-hue={HUE[category.id]}>
-            <span>{t(CATEGORY_KEY[category.id])}</span>
-            <span className="dsh-context-track-cat">
-              <i style={{ width: `${(category.tokens / safe) * 100}%` }} />
-            </span>
-            <FigureView figure={{ basis: 'estimated', value: category.tokens }} t={t} showBasis={false} />
-          </li>
-        ))}
+        {ranked.map(category => {
+          const fold = toolsFold && category.id === 'tools'
+          const name = t(CATEGORY_KEY[category.id])
+          return (
+            <li
+              key={category.id}
+              data-category={category.id}
+              data-hue={HUE[category.id]}
+              data-open={fold ? (toolsOpen ? 'true' : 'false') : undefined}
+            >
+              <div
+                className="dsh-context-track-cat-line"
+                data-fold={fold ? 'true' : undefined}
+                onClick={fold ? toggleTools : undefined}
+              >
+                <span className="dsh-context-track-cat-name">
+                  <span>{name}</span>
+                  {fold ? (
+                    <button
+                      type="button"
+                      className="dsh-context-track-cat-toggle"
+                      aria-expanded={toolsOpen}
+                      aria-label={name}
+                      onClick={(event: MouseEvent) => {
+                        event.stopPropagation()
+                        toggleTools()
+                      }}
+                    >
+                      <Caret />
+                    </button>
+                  ) : null}
+                </span>
+                <span className="dsh-context-track-cat">
+                  <i style={{ width: `${(category.tokens / safe) * 100}%` }} />
+                </span>
+                <FigureView figure={{ basis: 'estimated', value: category.tokens }} t={t} showBasis={false} />
+              </div>
+              {fold && toolsOpen ? (
+                <ToolList tools={window.toolDefinitions} overhead={window.definitionOverhead} t={t} nested />
+              ) : null}
+            </li>
+          )
+        })}
       </ol>
-      <ToolList tools={window.toolDefinitions} overhead={window.definitionOverhead} t={t} />
+      {toolsFold ? null : (
+        <ToolList tools={window.toolDefinitions} overhead={window.definitionOverhead} t={t} />
+      )}
       <TimingCard report={report} t={t} />
-      {window.consistent === true ? <p>{t('consistent')}</p> : null}
-      {window.consistent === false && window.delta !== undefined ? (
-        <p>
-          {t('delta')} <FigureView figure={window.delta} t={t} showBasis={false} />
-        </p>
-      ) : null}
       {compactionPresent(report) ? (
         <section data-compaction>
           <h3>{t('compaction')}</h3>
@@ -122,16 +165,6 @@ export function TokenCard({
           ))}
         </section>
       ) : null}
-      {consumption.title !== undefined ? (
-        <section data-session-name>
-          <h3>{t('title')}</h3>
-          <p data-stat="title">
-            {t('usage')} <FigureView figure={consumption.title} t={t} showBasis={false} />
-          </p>
-          <p>{t('titleExcluded')}</p>
-          <p>{titleName !== undefined && titleName.length > 0 ? titleName : t('titleMissing')}</p>
-        </section>
-      ) : null}
       {report.subagents.map(child => {
         const track = trackOf(child.sessionId)
         const usage = sessionUsage(track?.root ?? [])
@@ -144,5 +177,21 @@ export function TokenCard({
       })}
       <div className="dsh-context-track-bill-second">{children}</div>
     </div>
+  )
+}
+
+/** Same glyph either way; the row rotates it, so open and closed stay the same width. */
+function Caret(): ReactNode {
+  return (
+    <svg className="dsh-context-track-cat-caret" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M6 4.25 10.25 8 6 11.75"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }

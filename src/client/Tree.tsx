@@ -1,4 +1,4 @@
-/** Call tree. Each row is the hierarchy and the turn's waterfall. Expansion stays in the parent. */
+/** Call tree. Each row is the hierarchy. Expansion stays in the parent. */
 import type { ReactNode } from 'react'
 import { billOf, type Figure } from '../shared/figures.js'
 import {
@@ -13,8 +13,7 @@ import {
   type TurnItem,
   type TurnNode,
 } from '../shared/model.js'
-import type { CallTiming, EventKind } from '../shared/report.js'
-import { barGeometry } from '../shared/timing.js'
+import type { EventKind } from '../shared/report.js'
 import { copyText, formatDuration } from './format.js'
 import type { TrackKey } from './locales.js'
 import { FigureView } from './widgets.js'
@@ -43,12 +42,8 @@ export interface TreeProps {
   onAttempt?: (attemptId: string) => void
   t: (key: TrackKey) => string
   now?: number
-  /** Wall-clock time of the opening first response. Drawn on every bar in this turn. */
-  responseEnd?: number
   /** When set, rows that are not this kind drop out of the tree. Turns stay. */
   filter?: EventKind
-  /** Per-attempt wait, think, and first response. Shown on the row hover, not in a list. */
-  calls?: readonly CallTiming[]
   /** Compaction numbers for one turn. Other turns keep the plain sidecar label. */
   turnBill?: { turnId: string; reclaimed?: Figure; cost: Figure }
   parentTurnId?: string
@@ -81,8 +76,6 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
   const expanded = props.open[key] ?? defaultExpanded('turn', node.status)
   const origin = node.startTime
   const end = node.endTime ?? props.now
-  const span = origin !== undefined && end !== undefined ? Math.max(end - origin, 1) : undefined
-  const markLeft = markPercent(props.responseEnd, origin, span)
   const cursor: TreeCursor = {
     sessionId: props.sessionId, nodeId: node.id, key, kind: 'turn', status: node.status,
     expandable: node.items.length > 0, activateId: node.id,
@@ -95,11 +88,8 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
         expanded={expanded}
         canExpand={node.items.length > 0}
         current={isCurrent(props, node.id)}
-        bar={box(origin, end, origin, span)}
         duration={origin !== undefined && end !== undefined ? end - origin : undefined}
-        markLeft={markLeft}
         depth={nest(props)}
-        kind="turn"
         t={props.t}
         onToggle={() => { props.onToggle(key, 'turn', node.status) }}
         onSelect={() => { activate(props, cursor) }}
@@ -107,7 +97,7 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
       {expanded ? (
         <div className="dsh-context-track-children">
           {node.items.map(item => (
-            <ItemRow key={item.id} item={item} origin={origin} span={span} markLeft={markLeft} {...props} depth={nest(props) + 1} parentTurnId={node.id} />
+            <ItemRow key={item.id} item={item} origin={origin} {...props} depth={nest(props) + 1} parentTurnId={node.id} />
           ))}
         </div>
       ) : null}
@@ -115,7 +105,7 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
   )
 }
 
-function ItemRow(props: TreeProps & Placed & { item: TurnItem }): ReactNode {
+function ItemRow(props: TreeProps & { origin?: number; item: TurnItem }): ReactNode {
   const { item } = props
   if (item.kind === 'step') return <StepRow {...props} node={item} />
   if (item.kind === 'sidecar') return <SidecarRow {...props} node={item} />
@@ -123,15 +113,15 @@ function ItemRow(props: TreeProps & Placed & { item: TurnItem }): ReactNode {
 }
 
 function StepRow({
-  node, origin, span, markLeft, ...props
-}: TreeProps & Placed & { node: StepNode }): ReactNode {
+  node, origin, ...props
+}: TreeProps & { origin?: number; node: StepNode }): ReactNode {
   if (!rowVisible('step', undefined, props.filter)) return null
   const key = rowKey(props.sessionId, node.id)
   const expanded = props.open[key] ?? false
   const depth = nest(props)
   const latest = node.attempts[node.attempts.length - 1]
   const target = latest?.id ?? node.id
-  const canExpand = node.attempts.length > 0 || node.tools.length > 0
+  const canExpand = node.attempts.length > 0 || node.tools.length > 0 || (node.searches?.length ?? 0) > 0
   const start = node.startTime ?? origin
   const end = node.endTime ?? props.now
   const cursor: TreeCursor = {
@@ -148,22 +138,27 @@ function StepRow({
         canExpand={canExpand}
         current={isCurrent(props, target) || isCurrent(props, node.id)}
         usage={node.usage}
-        bar={box(start, end, origin, span)}
         duration={start !== undefined && end !== undefined ? end - start : undefined}
-        markLeft={markLeft}
-        timing={timingText(props.calls, latest?.id, props.t)}
         depth={depth}
-        kind="step"
         t={props.t}
         onToggle={() => { props.onToggle(key, 'step', node.status) }}
         onSelect={() => { activate(props, cursor) }}
       />
       {expanded ? (
         <div className="dsh-context-track-children">
-          {node.attempts.filter(() => rowVisible('attempt', undefined, props.filter)).map(attempt => (
-            <AttemptRow key={attempt.id} attempt={attempt} origin={origin} span={span} markLeft={markLeft} {...props} depth={depth + 1} />
-          ))}
-          {node.tools.filter(() => rowVisible('tool', undefined, props.filter)).map(tool => {
+          {stepEntries(node).map(entry => {
+            if (entry.kind === 'attempt') {
+              if (!rowVisible('attempt', undefined, props.filter)) return null
+              return (
+                <AttemptRow key={entry.attempt.id} attempt={entry.attempt} {...props} depth={depth + 1} />
+              )
+            }
+            if (entry.kind === 'search') {
+              if (!rowVisible('sidecar', entry.search.purpose, props.filter)) return null
+              return <SidecarRow key={entry.search.id} node={entry.search} {...props} depth={depth + 1} />
+            }
+            if (!rowVisible('tool', undefined, props.filter)) return null
+            const tool = entry.tool
             const childKey = rowKey(props.sessionId, tool.id)
             const childOpen = props.open[childKey] ?? false
             const expandable = tool.childSessionId !== undefined && childExpandable(tool.childMode)
@@ -181,18 +176,24 @@ function StepRow({
                   expanded={childOpen}
                   canExpand={expandable}
                   current={isCurrent(props, tool.id)}
-                  bar={box(tool.startTime, tool.endTime ?? props.now, origin, span)}
                   duration={tool.startTime !== undefined && tool.endTime !== undefined ? tool.endTime - tool.startTime : undefined}
-                  markLeft={markLeft}
                   depth={depth + 1}
-                  kind="tool"
                   t={props.t}
                   onToggle={() => { props.onToggle(childKey, 'tool', shown) }}
                   onSelect={() => { activate(props, cursor) }}
                 />
+                {(tool.searches ?? []).some(search => rowVisible('sidecar', search.purpose, props.filter)) ? (
+                  <div className="dsh-context-track-children">
+                    {(tool.searches ?? []).map(search => (
+                      rowVisible('sidecar', search.purpose, props.filter)
+                        ? <SidecarRow key={search.id} node={search} {...props} depth={depth + 2} />
+                        : null
+                    ))}
+                  </div>
+                ) : null}
                 {childOpen && expandable && tool.childSessionId !== undefined ? (
                   <div className="dsh-context-track-children">
-                    <Tree {...props} sessionId={tool.childSessionId} track={childTrack} depth={depth + 2} responseEnd={undefined} />
+                    <Tree {...props} sessionId={tool.childSessionId} track={childTrack} depth={depth + 2} />
                   </div>
                 ) : null}
               </div>
@@ -205,8 +206,8 @@ function StepRow({
 }
 
 function AttemptRow({
-  attempt, origin, span, markLeft, ...props
-}: TreeProps & Placed & { attempt: AttemptRef }): ReactNode {
+  attempt, ...props
+}: TreeProps & { attempt: AttemptRef }): ReactNode {
   const end = attempt.endTime
   const start = attempt.streamStart ?? end
   const key = rowKey(props.sessionId, attempt.id)
@@ -222,12 +223,8 @@ function AttemptRow({
       canExpand={false}
       current={isCurrent(props, attempt.id)}
       usage={attempt.usage}
-      bar={box(start, end, origin, span)}
       duration={start !== undefined && end !== undefined ? end - start : undefined}
-      markLeft={markLeft}
-      timing={timingText(props.calls, attempt.id, props.t)}
       depth={nest(props)}
-      kind="attempt"
       t={props.t}
       onToggle={() => undefined}
       onSelect={() => { activate(props, cursor) }}
@@ -264,7 +261,6 @@ function SidecarRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'sideca
       canExpand={false}
       current={isCurrent(props, props.node.id)}
       depth={nest(props)}
-      kind="sidecar"
       t={props.t}
       onToggle={() => undefined}
       onSelect={() => { activate(props, cursor) }}
@@ -291,14 +287,13 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
         canExpand={expandable}
         current={isCurrent(props, props.node.id)}
         depth={nest(props)}
-        kind="unlinked"
         t={props.t}
         onToggle={() => { props.onToggle(key, 'unlinked', 'ok') }}
         onSelect={() => { activate(props, cursor) }}
       />
       {expanded && expandable ? (
         <div className="dsh-context-track-children">
-          <Tree {...props} sessionId={props.node.childSessionId} track={childTrack} depth={nest(props) + 1} responseEnd={undefined} />
+          <Tree {...props} sessionId={props.node.childSessionId} track={childTrack} depth={nest(props) + 1} />
         </div>
       ) : null}
     </div>
@@ -306,7 +301,7 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
 }
 
 function Row({
-  label, secondary, status, expanded, canExpand, current, usage, bar, duration, markLeft, timing, depth, kind, t, onToggle, onSelect,
+  label, secondary, status, expanded, canExpand, current, usage, duration, depth, t, onToggle, onSelect,
 }: {
   label: string
   secondary?: string
@@ -315,12 +310,8 @@ function Row({
   canExpand: boolean
   current: boolean
   usage?: TokenUsageScalars
-  bar?: { left: number; width: number }
   duration?: number
-  markLeft?: number
-  timing?: string
   depth: number
-  kind: 'turn' | 'step' | 'attempt' | 'tool' | 'sidecar' | 'unlinked'
   t: (key: TrackKey) => string
   onToggle: () => void
   onSelect: () => void
@@ -361,7 +352,6 @@ function Row({
             <span className="dsh-context-track-muted">{secondary}</span>
           ) : null}
         </button>
-        {timing !== undefined ? <span data-timing className="dsh-context-track-timing">{timing}</span> : null}
       </div>
       <span data-column="duration">
         {duration !== undefined ? <DurationView ms={duration} /> : null}
@@ -375,26 +365,8 @@ function Row({
           </span>
         ) : null}
       </span>
-      <span className="dsh-context-track-bar" data-column="bar" data-kind={kind === 'attempt' ? 'step' : kind} data-left={bar?.left}>
-        {bar !== undefined ? <i style={{ left: `${bar.left}%`, width: `${bar.width}%` }} /> : null}
-        {markLeft !== undefined ? (
-          <span className="dsh-context-track-response" data-response-end style={{ left: `${markLeft}%` }} />
-        ) : null}
-      </span>
     </div>
   )
-}
-
-interface Placed {
-  origin?: number
-  span?: number
-  markLeft?: number
-}
-
-function markPercent(time: number | undefined, origin: number | undefined, span: number | undefined): number | undefined {
-  if (time === undefined || origin === undefined || span === undefined) return undefined
-  if (time < origin || time > origin + span) return undefined
-  return barGeometry(time, time, origin, span).left
 }
 
 function DurationView({ ms }: { ms: number }): ReactNode {
@@ -414,16 +386,6 @@ function DurationView({ ms }: { ms: number }): ReactNode {
       {shown.text}
     </button>
   )
-}
-
-function box(
-  start: number | undefined,
-  end: number | undefined,
-  origin: number | undefined,
-  span: number | undefined,
-): { left: number; width: number } | undefined {
-  if (start === undefined || end === undefined || origin === undefined || span === undefined) return undefined
-  return barGeometry(start, end, origin, span)
 }
 
 function rowKey(sessionId: string, nodeId: string): string {
@@ -450,27 +412,18 @@ function nest(props: { depth?: number }): number {
   return props.depth ?? 0
 }
 
-function timingText(
-  calls: readonly CallTiming[] | undefined,
-  attemptId: string | undefined,
-  t: (key: TrackKey) => string,
-): string | undefined {
-  if (calls === undefined || attemptId === undefined) return undefined
-  const call = calls.find(item => item.attemptId === attemptId)
-  if (call === undefined) return undefined
-  const parts = [
-    `${t('wait')} ${plain(call.wait)}`,
-    `${t('think')} ${plain(call.think)}`,
+/** Attempts, tools, and step-level searches in log order. Tool-owned searches stay on the tool. */
+function stepEntries(step: StepNode): Array<
+  | { seq: number; kind: 'attempt'; attempt: AttemptRef }
+  | { seq: number; kind: 'tool'; tool: StepNode['tools'][number] }
+  | { seq: number; kind: 'search'; search: NonNullable<StepNode['searches']>[number] }
+> {
+  const entries = [
+    ...step.attempts.map(attempt => ({ seq: attempt.outputSeq ?? attempt.inputSeq, kind: 'attempt' as const, attempt })),
+    ...step.tools.map(tool => ({ seq: tool.callSeq, kind: 'tool' as const, tool })),
+    ...(step.searches ?? []).map(search => ({ seq: search.requestSeq, kind: 'search' as const, search })),
   ]
-  if (call.thinkNote === 'none') parts.push(t('noThink'))
-  if (call.delayMs !== undefined) parts.push(`delayMs ${call.delayMs}`)
-  if (call.firstVisible !== undefined) parts.push(`${t('firstResponse')} ${call.firstVisible}`)
-  return parts.join(' · ')
-}
-
-function plain(figure: Figure): string {
-  if (figure.value === undefined) return ''
-  return formatDuration(figure.value).text
+  return entries.sort((left, right) => left.seq - right.seq)
 }
 
 /** Kind filter for the tree. Turns always stay so the rail of the loop is still there. */
@@ -560,33 +513,47 @@ function pushItem(
   const key = rowKey(sessionId, item.id)
   const expanded = open[key] ?? false
   const latest = item.attempts[item.attempts.length - 1]
-  const canExpand = item.attempts.length > 0 || item.tools.length > 0
+  const canExpand = item.attempts.length > 0 || item.tools.length > 0 || (item.searches?.length ?? 0) > 0
   rows.push({
     sessionId, nodeId: item.id, key, kind: 'step', status: item.status, expandable: canExpand,
     activateId: latest?.id ?? item.id,
     ...(latest !== undefined ? { attemptId: latest.id } : {}),
   })
   if (!expanded) return
-  if (rowVisible('attempt', undefined, filter)) {
-    for (const attempt of item.attempts) {
+  for (const entry of stepEntries(item)) {
+    if (entry.kind === 'attempt') {
+      if (!rowVisible('attempt', undefined, filter)) continue
       rows.push({
-        sessionId, nodeId: attempt.id, key: rowKey(sessionId, attempt.id), kind: 'attempt',
-        status: attempt.status, expandable: false, activateId: attempt.id, attemptId: attempt.id,
+        sessionId, nodeId: entry.attempt.id, key: rowKey(sessionId, entry.attempt.id), kind: 'attempt',
+        status: entry.attempt.status, expandable: false, activateId: entry.attempt.id, attemptId: entry.attempt.id,
+      })
+      continue
+    }
+    if (entry.kind === 'search') {
+      if (!rowVisible('sidecar', entry.search.purpose, filter)) continue
+      rows.push({
+        sessionId, nodeId: entry.search.id, key: rowKey(sessionId, entry.search.id), kind: 'sidecar',
+        status: entry.search.status, expandable: false, activateId: entry.search.id,
+      })
+      continue
+    }
+    if (!rowVisible('tool', undefined, filter)) continue
+    const childKey = rowKey(sessionId, entry.tool.id)
+    const expandable = entry.tool.childSessionId !== undefined && childExpandable(entry.tool.childMode)
+    const childOpen = open[childKey] ?? false
+    rows.push({
+      sessionId, nodeId: entry.tool.id, key: childKey, kind: 'tool', status: entry.tool.status,
+      expandable, activateId: entry.tool.id,
+    })
+    for (const search of entry.tool.searches ?? []) {
+      if (!rowVisible('sidecar', search.purpose, filter)) continue
+      rows.push({
+        sessionId, nodeId: search.id, key: rowKey(sessionId, search.id), kind: 'sidecar',
+        status: search.status, expandable: false, activateId: search.id,
       })
     }
-  }
-  if (rowVisible('tool', undefined, filter)) {
-    for (const tool of item.tools) {
-      const childKey = rowKey(sessionId, tool.id)
-      const expandable = tool.childSessionId !== undefined && childExpandable(tool.childMode)
-      const childOpen = open[childKey] ?? false
-      rows.push({
-        sessionId, nodeId: tool.id, key: childKey, kind: 'tool', status: tool.status,
-        expandable, activateId: tool.id,
-      })
-      if (childOpen && expandable && tool.childSessionId !== undefined) {
-        walk(tool.childSessionId, trackOf(tool.childSessionId), open, trackOf, filter, rows)
-      }
+    if (childOpen && expandable && entry.tool.childSessionId !== undefined) {
+      walk(entry.tool.childSessionId, trackOf(entry.tool.childSessionId), open, trackOf, filter, rows)
     }
   }
 }

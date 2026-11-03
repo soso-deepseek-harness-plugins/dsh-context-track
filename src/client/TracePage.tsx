@@ -21,7 +21,7 @@ import {
 } from '../shared/model.js'
 import '../shared/projection.js'
 import type { EventKind, TurnReport } from '../shared/report.js'
-import { Detail, type ToolHint } from './Detail.js'
+import { Detail } from './Detail.js'
 import { abbreviate, copyText, formatDuration, type ShownNumber } from './format.js'
 import { EventAxis } from './EventAxis.js'
 import { layoutForWidth } from './layout.js'
@@ -39,6 +39,9 @@ export interface TrackInject {
     attemptId: string,
   ): Promise<RemoteResult<TurnReport | MissingDetail>>
 }
+
+/** Content reappears once the drawer slide has landed, never mid-animation. */
+const DETAIL_REVEAL_MS = 190
 
 type SessionView = PropsRuntime<'conversation.view'>
 
@@ -95,10 +98,11 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const [eventSeq, setEventSeq] = useState<number | undefined>(undefined)
   const [filter, setFilter] = useState<EventKind | undefined>(undefined)
   const [detail, setDetail] = useState<NodeDetail | undefined>(undefined)
-  const [titleName, setTitleName] = useState<string | undefined>(undefined)
   const [report, setReport] = useState<TurnReport | MissingDetail | undefined>(undefined)
   const [paneSize, setPaneSize] = useState<Partial<Record<PaneName, number>>>({})
   const [detailOpen, setDetailOpen] = useState(true)
+  const [detailShown, setDetailShown] = useState(true)
+  const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const pickedTurn = turns.find(turn => turn.id === picked)
   const selectedTurn = marker !== undefined
@@ -117,8 +121,23 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     setEventSeq(undefined)
     setActiveKey(undefined)
     setFilter(undefined)
-    setTitleName(undefined)
   }, [sessionId])
+
+  useEffect(() => () => { clearTimeout(revealTimer.current) }, [])
+
+  /* Collapse hides the body first so the slide never lays it out at strip width.
+   * Expand reveals the body once the slide has landed. The body stays mounted
+   * either way, so views, folds, and scroll survive a collapse. */
+  const toggleDetail = () => {
+    clearTimeout(revealTimer.current)
+    if (detailOpen) {
+      setDetailShown(false)
+      setDetailOpen(false)
+      return
+    }
+    setDetailOpen(true)
+    revealTimer.current = setTimeout(() => { setDetailShown(true) }, DETAIL_REVEAL_MS)
+  }
 
   useEffect(() => {
     if (sessionId === undefined || node === undefined) return undefined
@@ -160,32 +179,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     }, showMissing)
     return () => { cancelled = true }
   }, [sessionId, turnId, attemptId, track, getTurn])
-
-  const titleSidecarId = selectedTurn?.items.find(item => item.kind === 'sidecar' && item.purpose === 'session-title')?.id
-  useEffect(() => {
-    if (sessionId === undefined || titleSidecarId === undefined) {
-      setTitleName(undefined)
-      return undefined
-    }
-    let cancelled = false
-    let pending: Promise<RemoteResult<NodeDetail>>
-    try {
-      pending = Promise.resolve(getNode(sessionId, titleSidecarId))
-    } catch {
-      setTitleName(undefined)
-      return () => { cancelled = true }
-    }
-    void pending.then(result => {
-      if (cancelled || result == null || typeof result !== 'object' || !('ok' in result) || result.ok !== true) return
-      const value = result.value
-      if (!isMissing(value) && value.kind === 'sidecar' && value.purpose === 'session-title' && typeof value.output === 'string' && value.output.length > 0) {
-        setTitleName(value.output)
-        return
-      }
-      setTitleName(undefined)
-    }, () => { if (!cancelled) setTitleName(undefined) })
-    return () => { cancelled = true }
-  }, [sessionId, titleSidecarId, getNode])
 
   const cursors = sessionId === undefined
     ? []
@@ -242,7 +235,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const watching = watchLabel(translate, selectedTurn, node?.nodeId, marker, track)
   const trackOf = (id: string) => readTrack(list.projectionsBySession, id)
   const nodeKey = `${sessionId}:${node?.nodeId ?? marker ?? 'turn'}`
-  const hints = toolHints(track, node?.nodeId)
   const failed = node !== undefined && detail !== undefined && isMissing(detail)
   return (
     <div
@@ -294,7 +286,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
               <TokenCard
                 report={shownReport}
                 activeSeq={eventSeq}
-                titleName={titleName}
                 trackOf={trackOf}
                 t={translate}
                 onGap={seq => {
@@ -340,7 +331,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 trackOf={trackOf}
                 open={open}
                 filter={filter}
-                calls={shownReport?.timing.calls}
                 onToggle={(key, kind, status) => {
                   setOpen(current => toggleExpanded(current, key, defaultExpanded(kind, status)))
                 }}
@@ -356,7 +346,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 onAttempt={id => { setAttemptId(id) }}
                 t={translate}
                 now={Date.now()}
-                responseEnd={shownReport?.timing.firstResponses.find(item => item.opening)?.end}
                 turnBill={shownReport !== undefined && compactionPresent(shownReport) ? {
                   turnId: shownReport.id,
                   reclaimed: reclaimedOf(shownReport.events),
@@ -378,35 +367,28 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 data-detail-toggle
                 aria-expanded={detailOpen}
                 aria-label={detailOpen ? translate('collapse') : translate('expand')}
-                onClick={() => { setDetailOpen(open => !open) }}
+                onClick={toggleDetail}
               >
                 <span aria-hidden="true">{detailOpen ? '▸' : '◂'}</span>
                 {detailOpen ? null : <span>{translate('detailPane')}</span>}
               </button>
-              {!detailOpen ? null : failed ? (
-                <p className="dsh-context-track-muted">{t('missing')}</p>
-              ) : (
-                <Detail
-                  key={nodeKey}
-                  detail={node === undefined && marker === undefined ? undefined : detail}
-                  nodeKey={nodeKey}
-                  t={translate}
-                  scrollerRef={detailRef}
-                  toolHints={hints}
-                  onSelectTool={hint => {
-                    setMarker(undefined)
-                    setPinned(true)
-                    const owner = turnContaining(turns, hint.id)
-                    if (owner !== undefined) setPicked(owner)
-                    setNode({ sessionId, nodeId: hint.id })
-                    setActiveKey(`${sessionId}:${hint.id}`)
-                  }}
-                  onOpenChild={() => {
-                    if (node === undefined) return
-                    revealTool(sessionId, node.nodeId, turns, setOpen)
-                  }}
-                />
-              )}
+              <div className="dsh-context-track-detail-body" hidden={!detailShown}>
+                {failed ? (
+                  <p className="dsh-context-track-muted">{t('missing')}</p>
+                ) : (
+                  <Detail
+                    key={nodeKey}
+                    detail={node === undefined && marker === undefined ? undefined : detail}
+                    nodeKey={nodeKey}
+                    t={translate}
+                    scrollerRef={detailRef}
+                    onOpenChild={() => {
+                      if (node === undefined) return
+                      revealTool(sessionId, node.nodeId, turns, setOpen)
+                    }}
+                  />
+                )}
+              </div>
             </div>
           </div>
           </div>
@@ -696,27 +678,6 @@ function turnContaining(turns: readonly TurnNode[], nodeId: string): string | un
     }
   }
   return undefined
-}
-
-function toolHints(track: TrackState | undefined, nodeId: string | undefined): ToolHint[] {
-  if (track === undefined || nodeId === undefined) return []
-  for (const root of track.root) {
-    if (root.kind !== 'turn') continue
-    for (const item of root.items) {
-      if (item.kind !== 'step') continue
-      const owns = item.id === nodeId
-        || item.attempts.some(attempt => attempt.id === nodeId)
-        || item.tools.some(tool => tool.id === nodeId)
-      if (!owns) continue
-      return item.tools.map(tool => ({
-        id: tool.id,
-        callId: tool.callId,
-        name: tool.name,
-        status: tool.status,
-      }))
-    }
-  }
-  return []
 }
 
 function revealTool(

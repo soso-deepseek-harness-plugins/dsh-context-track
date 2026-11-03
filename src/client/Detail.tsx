@@ -1,43 +1,35 @@
-/** Reading view of one node, or the same node as JSON. The call result sits above the input. */
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+/** Reading view of one node, or the same node as JSON. The call result sits after the input. */
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { classifyWindow, sourceLabel, type CategoryId, type ClassifiedItem } from '../shared/classify.js'
-import { isMissing, type AttemptDetail, type NodeDetail, type StepRunningDetail, type ToolDetail } from '../shared/detail.js'
+import { isMissing, type AttemptDetail, type NodeDetail, type SearchDetail, type StepRunningDetail, type TitleDetail, type ToolDetail } from '../shared/detail.js'
 import { estimateMessage } from '../shared/estimate.js'
+import { parseUsage } from '../shared/figures.js'
 import { childExpandable } from '../shared/model.js'
-import { ToolList } from './Inspector.js'
 import { compositeJson, JsonView } from './JsonView.js'
 import type { TrackKey } from './locales.js'
 import { MarkdownView } from './MarkdownView.js'
-import { CATEGORY_KEY, FigureView } from './widgets.js'
+import { abbreviate, copyText } from './format.js'
+import { CATEGORY_KEY } from './widgets.js'
 
 const PREVIEW_LINES = 8
-
-export interface ToolHint {
-  id: string
-  callId: string
-  name: string
-  status: string
-  resultLine?: string
-}
 
 export interface DetailProps {
   detail: NodeDetail | undefined
   nodeKey: string
   t: (key: TrackKey) => string
   scrollerRef: RefObject<HTMLElement | null>
-  toolHints?: readonly ToolHint[]
-  onSelectTool?: (hint: ToolHint) => void
   onOpenChild?: () => void
 }
 
 type ViewName = 'reading' | 'json'
 
-/** One node. Switching views restores the scroll each view last had. */
+/** One node. A visited view stays mounted, so its folds and scroll survive the round trip. */
 export function Detail({
-  detail, nodeKey, t, scrollerRef, toolHints = [], onSelectTool, onOpenChild,
+  detail, nodeKey, t, scrollerRef, onOpenChild,
 }: DetailProps): ReactNode {
   const [view, setView] = useState<ViewName>('reading')
   const [slice, setSlice] = useState<unknown>(undefined)
+  const [visited, setVisited] = useState<Readonly<Record<ViewName, boolean>>>({ reading: true, json: false })
   const memory = useRef<Record<ViewName, number>>({ reading: 0, json: 0 })
   const viewRef = useRef(view)
   viewRef.current = view
@@ -47,26 +39,27 @@ export function Detail({
     if (scroller !== null) scroller.scrollTop = memory.current[view]
   }, [view, nodeKey, scrollerRef])
 
-  const choose = (next: ViewName) => {
+  const rememberScroll = () => {
     const scroller = scrollerRef.current
     if (scroller !== null) memory.current[viewRef.current] = scroller.scrollTop
+  }
+
+  const choose = (next: ViewName) => {
+    rememberScroll()
     setSlice(undefined)
+    setVisited(current => ({ ...current, [next]: true }))
     setView(next)
   }
 
   const openSlice = (value: unknown) => {
-    const scroller = scrollerRef.current
-    if (scroller !== null) memory.current[viewRef.current] = scroller.scrollTop
+    rememberScroll()
     setSlice(value)
+    setVisited(current => ({ ...current, json: true }))
     setView('json')
   }
 
   if (detail === undefined) return <p className="dsh-context-track-muted">{t('hint')}</p>
   if (isMissing(detail)) return <p className="dsh-context-track-muted">{t('missing')}</p>
-
-  const hints = detail.kind === 'attempt' || detail.kind === 'step'
-    ? withResults(toolHints, detail.messages)
-    : toolHints
 
   return (
     <div data-view={view} data-node={nodeKey}>
@@ -78,29 +71,29 @@ export function Detail({
           {t('jsonView')}
         </button>
       </div>
-      {view === 'json' ? (
-        <JsonView value={slice !== undefined ? slice : detail} t={t} />
-      ) : (
+      {/* The JSON pane precedes the reading pane so a first-match query finds it once both stay mounted. */}
+      {visited.json ? (
+        <div data-view-pane="json" hidden={view !== 'json'}>
+          <JsonPane detail={detail} slice={slice} t={t} />
+        </div>
+      ) : null}
+      <div data-view-pane="reading" hidden={view !== 'reading'}>
         <Structured
           detail={detail}
-          hints={hints}
           t={t}
-          onSelectTool={onSelectTool}
           onOpenChild={onOpenChild}
           onSlice={openSlice}
         />
-      )}
+      </div>
     </div>
   )
 }
 
 function Structured({
-  detail, hints, t, onSelectTool, onOpenChild, onSlice,
+  detail, t, onOpenChild, onSlice,
 }: {
   detail: Exclude<NodeDetail, { missing: true }>
-  hints: readonly ToolHint[]
   t: (key: TrackKey) => string
-  onSelectTool?: (hint: ToolHint) => void
   onOpenChild?: () => void
   onSlice: (value: unknown) => void
 }): ReactNode {
@@ -108,15 +101,15 @@ function Structured({
     return (
       <div data-io>
         <Facts detail={detail} t={t} />
+        <InputCards messages={detail.messages} tools={detail.tools} t={t} onSlice={onSlice} />
         {detail.kind === 'attempt' ? (
-          <OutputCards output={detail.output} hints={hints} t={t} onSelectTool={onSelectTool} onSlice={onSlice} />
+          <OutputCards output={detail.output} usage={detail.usage} t={t} onSlice={onSlice} />
         ) : (
           <section data-output="unseen" className="dsh-context-track-block">
             <h3>{t('output')}</h3>
             <p className="dsh-context-track-muted">{t('notSeen')}</p>
           </section>
         )}
-        <InputCards messages={detail.messages} tools={detail.tools} t={t} onSlice={onSlice} />
       </div>
     )
   }
@@ -124,17 +117,15 @@ function Structured({
     return <ToolBody detail={detail} t={t} onOpenChild={onOpenChild} onSlice={onSlice} />
   }
   if (detail.kind === 'sidecar') {
-    if (detail.purpose === 'session-title' && (detail.output === undefined || detail.output.length === 0)) {
-      return <p data-session-name>{t('titleMissing')}</p>
+    if (detail.purpose === 'session-title') {
+      return <TitleBody detail={detail} t={t} onSlice={onSlice} />
     }
-    const text = detail.purpose === 'session-title'
-      ? detail.output
-      : detail.purpose === 'compaction'
-        ? detail.summary
-        : detail.request
+    if (detail.purpose === 'web-search') {
+      return <SearchBody detail={detail} t={t} />
+    }
     return (
       <div className="dsh-context-track-prose" data-sidecar-body>
-        <MarkdownView text={typeof text === 'string' ? text : stringify(text)} />
+        <MarkdownView text={typeof detail.summary === 'string' ? detail.summary : stringify(detail.summary)} />
       </div>
     )
   }
@@ -172,6 +163,75 @@ function Facts({
     pushFact(facts, 'retry', t('retry'), summarize(detail.retry.failure))
     facts.push({ key: 'delay', label: t('retryDelay'), value: `${detail.retry.delayMs} ms` })
   }
+  return <FactList facts={facts} />
+}
+
+/** Session naming uses the same reading shape as a model call: facts, input, then output. */
+function TitleBody({
+  detail, t, onSlice,
+}: {
+  detail: TitleDetail
+  t: (key: TrackKey) => string
+  onSlice: (value: unknown) => void
+}): ReactNode {
+  const named = typeof detail.output === 'string' && detail.output.length > 0
+  return (
+    <div data-io data-title-body>
+      <TitleFacts detail={detail} t={t} />
+      <InputCards messages={titleMessages(detail)} tools={undefined} t={t} onSlice={onSlice} />
+      {named ? (
+        <OutputCards output={detail.output} t={t} onSlice={onSlice} />
+      ) : (
+        <section data-output="unseen" className="dsh-context-track-block">
+          <h3>{t('output')}</h3>
+          <p data-session-name className="dsh-context-track-muted">{t('titleMissing')}</p>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function TitleFacts({
+  detail, t,
+}: {
+  detail: TitleDetail
+  t: (key: TrackKey) => string
+}): ReactNode {
+  const route = record(detail.route)
+  const facts: Fact[] = []
+  if (typeof detail.route === 'string') {
+    pushFact(facts, 'route', t('routeLabel'), text(detail.route))
+  } else {
+    pushFact(facts, 'model', t('model'), text(route.model))
+    pushFact(facts, 'provider', t('provider'), text(route.provider))
+  }
+  pushFact(facts, 'reasoning', t('reasoning'), text(detail.reasoningEffort))
+  const maxTokens = text(detail.maxTokens)
+  if (maxTokens !== undefined) {
+    facts.push({ key: 'maxTokens', label: t('maxOutput'), value: `${formatCount(detail.maxTokens)} token` })
+  }
+  facts.push({ key: 'status', label: t('finish'), value: labelStatus(detail.status, t), status: detail.status })
+  return <FactList facts={facts} />
+}
+
+function titleMessages(detail: TitleDetail): unknown[] {
+  const list = Array.isArray(detail.messages) ? detail.messages : []
+  const system = systemMessage(detail.system)
+  return system === undefined ? list : [system, ...list]
+}
+
+function systemMessage(system: unknown): unknown | undefined {
+  if (typeof system === 'string') {
+    if (system.trim().length === 0) return undefined
+    return { role: 'system', content: [{ type: 'text', text: system }] }
+  }
+  if (system === null || typeof system !== 'object') return undefined
+  const row = system as { role?: unknown; content?: unknown; text?: unknown }
+  if (row.role === undefined && row.content === undefined && typeof row.text !== 'string') return undefined
+  return system
+}
+
+function FactList({ facts }: { facts: readonly Fact[] }): ReactNode {
   return (
     <div className="dsh-context-track-facts" data-facts>
       {facts.map(fact => (
@@ -230,18 +290,17 @@ function InputCards({
         const item = classified.items.find(entry => entry.message === message)
         return <MessageCard key={index} message={message} item={item} t={t} onSlice={onSlice} />
       })}
-      <ToolList tools={classified.tools} overhead={classified.definitionOverhead} t={t} searchable />
     </div>
   )
 }
 
+/** Thinking sits in its own card. The result card keeps the written answer, tool calls, and output tokens. */
 function OutputCards({
-  output, hints, t, onSelectTool, onSlice,
+  output, usage, t, onSlice,
 }: {
   output: unknown
-  hints: readonly ToolHint[]
+  usage?: unknown
   t: (key: TrackKey) => string
-  onSelectTool?: (hint: ToolHint) => void
   onSlice: (value: unknown) => void
 }): ReactNode {
   if (output === undefined) {
@@ -252,131 +311,166 @@ function OutputCards({
       </section>
     )
   }
-  const blocks = contentBlocks(output)
-  const texts = blocks.filter(block => block.type !== 'tool-call' && block.type !== 'reasoning' && typeof block.text === 'string' && block.text.length > 0)
-  const thoughts = blocks.filter(block => block.type === 'reasoning' && typeof block.text === 'string' && block.text.length > 0)
-  const calls = blocks.filter(block => block.type === 'tool-call')
-  const loose = blocks.length === 0 ? messageText(output) : ''
-  const panes: OutputPane[] = [
-    ...(texts.length > 0 || loose.length > 0 ? ['answer' as const] : []),
-    ...(thoughts.length > 0 ? ['reasoning' as const] : []),
-    ...(calls.length > 0 ? ['tools' as const] : []),
-  ]
-  const signature = `${texts.length}:${thoughts.length}:${calls.length}:${loose.slice(0, 24)}`
-  const [pane, setPane] = useState<OutputPane>(panes[0] ?? 'answer')
-  const [seen, setSeen] = useState(signature)
-  if (seen !== signature) {
-    setSeen(signature)
-    setPane(panes[0] ?? 'answer')
-  }
-  const active = panes.includes(pane) ? pane : (panes[0] ?? 'answer')
-  const role = roleOf(output) ?? 'assistant'
-  const priced = output !== null && typeof output === 'object'
-    ? { ...(output as Record<string, unknown>), role }
-    : { role, content: [{ type: 'text', text: loose }] }
+  const answer = outputAnswer(output)
+  const thought = outputThought(output)
+  const calls = outputCalls(output)
+  const outputTokens = parseUsage(usage)?.outputTokens
   return (
     <div data-output>
+      {thought.length > 0 ? (
+        <section data-reasoning className="dsh-context-track-block dsh-context-track-reasoning">
+          <header className="dsh-context-track-output-meta">
+            <h3>{t('think')}</h3>
+          </header>
+          <ReadingBody text={thought} faint t={t} />
+        </section>
+      ) : null}
       <section className="dsh-context-track-block dsh-context-track-output" data-category="history">
-        <header className="dsh-context-track-output-head">
-          <div className="dsh-context-track-output-title">
-            <h3>{t('thisOutput')}</h3>
-            <p className="dsh-context-track-output-summary">
-              <span>{t('assistantReply')}</span>
-              <span className="dsh-context-track-muted">{role}</span>
-              <FigureView figure={{ basis: 'estimated', value: estimateMessage(priced) }} t={t} />
-            </p>
-          </div>
+        <header className="dsh-context-track-output-meta">
+          <h3>{t('output')}</h3>
+          {outputTokens !== undefined ? (
+            <span data-output-tokens className="dsh-context-track-output-tokens">
+              <TokenMark basis="usage" value={outputTokens} />
+            </span>
+          ) : null}
           <button type="button" data-open-json onClick={() => { onSlice(output) }}>
             {t('openInJson')}
           </button>
         </header>
-        {panes.length > 1 ? (
-          <div className="dsh-context-track-segments" role="tablist">
-            {panes.map(name => (
-              <button
-                key={name}
-                type="button"
-                role="tab"
-                data-output-tab={name}
-                aria-selected={active === name}
-                onClick={() => { setPane(name) }}
-              >
-                {outputPaneLabel(name, name === 'tools' ? calls.length : name === 'reasoning' ? thoughts.length : texts.length, t)}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {panes.includes('answer') ? (
-          <div data-output-panel="answer" hidden={active === 'answer' ? undefined : true}>
-            {texts.map((block, index) => (
-              <ReadingBody key={chipId(block, index)} text={String(block.text)} t={t} />
-            ))}
-            {loose.length > 0 ? <ReadingBody text={loose} t={t} /> : null}
-          </div>
-        ) : null}
-        {panes.includes('reasoning') ? (
-          <div data-output-panel="reasoning" hidden={active === 'reasoning' ? undefined : true}>
-            {thoughts.map((block, index) => (
-              <ReadingBody key={`think-${index}`} text={String(block.text)} faint t={t} />
-            ))}
-          </div>
-        ) : null}
-        {panes.includes('tools') ? (
-          <div data-output-panel="tools" hidden={active === 'tools' ? undefined : true}>
-            {calls.map((block, index) => (
-              <OutputCall key={chipId(block, index)} block={block} hints={hints} t={t} onSelectTool={onSelectTool} />
-            ))}
-          </div>
-        ) : null}
+        {answer.length > 0 ? <ReadingBody text={answer} t={t} /> : null}
+        {calls.map((block, index) => <OutputCall key={callKey(block, index)} block={block} t={t} />)}
       </section>
     </div>
   )
 }
 
-type OutputPane = 'answer' | 'reasoning' | 'tools'
-
-function outputPaneLabel(pane: OutputPane, count: number, t: (key: TrackKey) => string): string {
-  const name = pane === 'answer' ? t('answer') : pane === 'reasoning' ? t('think') : t('tools')
-  return count > 1 ? `${name} ${count}` : name
-}
-
-function OutputCall({
-  block, hints, t, onSelectTool,
-}: {
-  block: Record<string, unknown>
-  hints: readonly ToolHint[]
-  t: (key: TrackKey) => string
-  onSelectTool?: (hint: ToolHint) => void
-}): ReactNode {
+/** A tool call the model wrote: its name, then the arguments as highlighted JSON. */
+function OutputCall({ block, t }: { block: Record<string, unknown>; t: (key: TrackKey) => string }): ReactNode {
+  const name = typeof block.name === 'string' && block.name.length > 0 ? block.name : t('tools')
   const args = block.arguments
-  const preview = typeof args === 'string' ? args : args === undefined ? '' : stringify(args)
-  const expandable = preview.length > 0
-  const [open, setOpen] = useState(preview.length > 0 && preview.length <= 160 && !preview.includes('\n'))
+  const hasArgs = args !== undefined && args !== null && args !== ''
   return (
-    <div data-output-call className="dsh-context-track-call">
-      <div className="dsh-context-track-call-head">
-        {expandable ? (
-          <button
-            type="button"
-            className="dsh-context-track-chevron"
-            aria-expanded={open}
-            aria-label={open ? t('collapse') : t('expand')}
-            onClick={() => { setOpen(value => !value) }}
-          >
-            <span aria-hidden="true">{open ? '▾' : '▸'}</span>
-          </button>
-        ) : (
-          <span className="dsh-context-track-chevron" aria-hidden="true" />
-        )}
-        <ToolChip block={block} hints={hints} t={t} onSelectTool={onSelectTool} />
-      </div>
-      {expandable ? (
-        <div data-call-body hidden={open ? undefined : true}>
-          <JsonOrMarkdown value={args} t={t} />
-        </div>
-      ) : null}
+    <div data-output-call>
+      <p className="dsh-context-track-output-call-name">{name}</p>
+      {hasArgs ? <JsonView value={args} t={t} chrome={false} /> : null}
     </div>
   )
+}
+
+/** Exact usage is `token=n`. A character estimate is `token≈n`. No exact or estimated caption. */
+function TokenMark({ basis, value }: { basis: 'usage' | 'estimated'; value: number }): ReactNode {
+  const shown = abbreviate(value)
+  const mark = basis === 'usage' ? `token=${shown.text}` : `token≈${shown.text}`
+  if (!shown.abbreviated) {
+    return <span className="dsh-context-track-num" data-basis={basis}>{mark}</span>
+  }
+  return (
+    <button
+      type="button"
+      className="dsh-context-track-num"
+      title={basis === 'usage' ? `token=${shown.full}` : `token≈${shown.full}`}
+      data-full={shown.full}
+      onClick={(event: MouseEvent) => {
+        event.stopPropagation()
+        void copyText(shown.full)
+      }}
+    >
+      {mark}
+    </button>
+  )
+}
+
+function callKey(block: Record<string, unknown>, index: number): string {
+  return typeof block.id === 'string' && block.id.length > 0 ? block.id : `${index}`
+}
+
+function outputCalls(output: unknown): Record<string, unknown>[] {
+  return contentBlocks(output).filter(block => block.type === 'tool-call')
+}
+
+/** Written answer. A plain string is the whole output. Reasoning never fills this card. */
+function outputAnswer(output: unknown): string {
+  if (typeof output === 'string') return output
+  const blocks = contentBlocks(output)
+  const answer = blockText(blocks, 'text')
+  if (answer.length > 0) return answer
+  return blocks.length === 0 ? messageText(output) : ''
+}
+
+function outputThought(output: unknown): string {
+  if (typeof output === 'string') return ''
+  return blockText(contentBlocks(output), 'reasoning')
+}
+
+function blockText(blocks: readonly Record<string, unknown>[], type: string): string {
+  return blocks
+    .filter(block => block.type === type && typeof block.text === 'string' && block.text.trim().length > 0)
+    .map(block => String(block.text))
+    .join('\n\n')
+}
+
+/** Full-node JSON is two documents. A sliced message stays a single document. */
+function JsonPane({
+  detail, slice, t,
+}: {
+  detail: Exclude<NodeDetail, { missing: true }>
+  slice: unknown
+  t: (key: TrackKey) => string
+}): ReactNode {
+  if (slice !== undefined) return <JsonView value={slice} t={t} />
+  const parts = jsonParts(detail)
+  if (parts === undefined) return <JsonView value={detail} t={t} />
+  return (
+    <div data-json-split>
+      <section data-json-part="input" className="dsh-context-track-block">
+        <h3>{t('input')}</h3>
+        <JsonView value={parts.input} t={t} />
+      </section>
+      <section data-json-part="output" className="dsh-context-track-block">
+        <h3>{t('output')}</h3>
+        <JsonView value={parts.output} t={t} />
+      </section>
+    </div>
+  )
+}
+
+function jsonParts(detail: Exclude<NodeDetail, { missing: true }>): { input: unknown; output: unknown } | undefined {
+  if (detail.kind === 'attempt' || detail.kind === 'step') {
+    return {
+      input: pick(detail, ['inputSeq', 'messages', 'tools', 'toolHistory', 'config', 'adapterDefaults', 'context']),
+      output: detail.kind === 'step'
+        ? { status: detail.status }
+        : pick(detail, ['status', 'output', 'usage', 'firstTokenTime', 'streamDuration', 'interrupted', 'retry']),
+    }
+  }
+  if (detail.kind === 'tool') {
+    return {
+      input: pick(detail, ['name', 'callId', 'arguments', 'childSessionId', 'childLabel', 'childMode']),
+      output: pick(detail, ['status', 'result']),
+    }
+  }
+  if (detail.kind === 'sidecar' && detail.purpose === 'compaction') {
+    return {
+      input: pick(detail, ['messages', 'tools', 'toolHistory', 'config', 'instruction', 'provider', 'model', 'maxTokens']),
+      output: pick(detail, ['status', 'summary', 'rawOutput', 'usage', 'error']),
+    }
+  }
+  if (detail.kind === 'sidecar' && detail.purpose === 'session-title') {
+    return {
+      input: pick(detail, ['system', 'messages', 'route', 'maxTokens', 'reasoningEffort']),
+      output: pick(detail, ['status', 'output']),
+    }
+  }
+  return undefined
+}
+
+function pick(source: object, keys: readonly string[]): Record<string, unknown> {
+  const row = source as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const key of keys) {
+    if (row[key] !== undefined) out[key] = row[key]
+  }
+  return out
 }
 
 /** Markdown, or foldable JSON when the whole block is an object or array. */
@@ -450,8 +544,7 @@ function MessageCard({
           {role.length > 0 ? <MetaRow label={t('role')} value={role} /> : null}
           {category !== undefined ? <MetaRow label={t('category')} value={t(CATEGORY_KEY[category])} /> : null}
           <tr>
-            <th scope="row">{t('tokenLabel')}</th>
-            <td><FigureView figure={{ basis: 'estimated', value: tokens }} t={t} /></td>
+            <td colSpan={2}><TokenMark basis="estimated" value={tokens} /></td>
           </tr>
           {source !== undefined ? <MetaRow label={t('source')} value={source} /> : null}
           {tool !== undefined ? <MetaRow label={t('toolName')} value={tool} /> : null}
@@ -486,41 +579,6 @@ function MetaRow({ label, value }: { label: string; value: string }): ReactNode 
   )
 }
 
-function ToolChip({
-  block, hints, t, onSelectTool,
-}: {
-  block: Record<string, unknown>
-  hints: readonly ToolHint[]
-  t: (key: TrackKey) => string
-  onSelectTool?: (hint: ToolHint) => void
-}): ReactNode {
-  const id = typeof block.id === 'string' ? block.id : undefined
-  const name = typeof block.name === 'string' && block.name.length > 0 ? block.name : 'tool'
-  const hint = id === undefined ? undefined : hints.find(tool => tool.callId === id || tool.id === id)
-  const summary = summarize(block.arguments ?? block.args ?? block.input)
-  const result = hint?.resultLine
-  const status = hint?.status
-  return (
-    <button
-      type="button"
-      className="dsh-context-track-tool-chip"
-      data-tool-chip={id ?? name}
-      onClick={() => {
-        if (hint === undefined || onSelectTool === undefined) return
-        onSelectTool(hint)
-      }}
-    >
-      <span>{name}</span>
-      <span className="dsh-context-track-muted" data-arg-summary>{summary}</span>
-      {status !== undefined ? (
-        <span className={`dsh-context-track-dot dsh-context-track-status-${status}`} data-status={status} />
-      ) : null}
-      {status !== undefined && status !== 'ok' ? <span>{labelStatus(status, t)}</span> : null}
-      {result !== undefined ? <span data-result-line>{result}</span> : null}
-    </button>
-  )
-}
-
 function ToolBody({
   detail, t, onOpenChild, onSlice,
 }: {
@@ -530,19 +588,18 @@ function ToolBody({
   onSlice: (value: unknown) => void
 }): ReactNode {
   const local = detail.childSessionId !== undefined && childExpandable(detail.childMode)
-  const resultText = detail.result === undefined ? undefined : typeof detail.result === 'string' ? detail.result : stringify(detail.result)
   return (
     <div data-tool-view>
       <section data-pane="arguments" className="dsh-context-track-block">
         <h3>{t('arguments')}</h3>
-        <JsonOrMarkdown value={detail.arguments} t={t} />
+        <JsonView value={detail.arguments} t={t} />
       </section>
       <section data-pane="result" className="dsh-context-track-block">
         <h3>{t('result')}</h3>
-        {resultText === undefined ? (
+        {detail.result === undefined ? (
           <p className="dsh-context-track-muted">{t('pending')}</p>
         ) : (
-          <JsonOrMarkdown value={detail.result} t={t} />
+          <JsonView value={detail.result} t={t} />
         )}
         <button
           type="button"
@@ -559,29 +616,56 @@ function ToolBody({
   )
 }
 
-function withResults(hints: readonly ToolHint[], messages: unknown): ToolHint[] {
-  return hints.map(hint => ({
-    ...hint,
-    resultLine: hint.resultLine ?? findResult(messages, hint.callId),
-  }))
-}
-
-function findResult(messages: unknown, callId: string): string | undefined {
-  if (!Array.isArray(messages)) return undefined
-  for (const message of messages) {
-    if (message === null || typeof message !== 'object') continue
-    const row = message as { toolCallId?: unknown; source?: { callId?: unknown }; content?: unknown }
-    const nested = row.source?.callId
-    const id = typeof row.toolCallId === 'string' ? row.toolCallId : typeof nested === 'string' ? nested : undefined
-    if (id !== callId) continue
-    return firstLine(row.content ?? message)
-  }
-  return undefined
-}
-
-function firstLine(value: unknown): string {
-  const text = typeof value === 'string' ? value : stringify(value)
-  return (text.split('\n')[0] ?? '').trim()
+/** Search sidecar: who triggered it, then the query and the scrubbed request. */
+function SearchBody({
+  detail, t,
+}: {
+  detail: SearchDetail
+  t: (key: TrackKey) => string
+}): ReactNode {
+  const query = record(detail.request).query
+  const source = detail.source
+  const trigger = source?.kind === 'tool'
+    ? source.name
+    : source?.kind === 'attempt'
+      ? source.attempt !== undefined
+        ? `${t('step').replace('{n}', String(source.step))} · ${t('attempt').replace('{n}', String(source.attempt))}`
+        : t('step').replace('{n}', String(source.step))
+      : undefined
+  return (
+    <div data-search-body>
+      {source !== undefined && trigger !== undefined ? (
+        <section data-pane="source" className="dsh-context-track-block">
+          <h3>{t('trigger')}</h3>
+          <p data-search-trigger>{trigger}</p>
+          {source.kind === 'tool' && source.arguments !== undefined ? (
+            <>
+              <h3>{t('arguments')}</h3>
+              <JsonView value={source.arguments} t={t} />
+            </>
+          ) : null}
+          {source.kind === 'attempt' && source.output !== undefined ? (
+            <JsonView value={source.output} t={t} />
+          ) : null}
+        </section>
+      ) : null}
+      <section data-pane="request" className="dsh-context-track-block">
+        <h3>{t('request')}</h3>
+        {typeof query === 'string' && query.length > 0 ? (
+          <table className="dsh-context-track-meta">
+            <tbody>
+              <MetaRow label={t('query')} value={query} />
+            </tbody>
+          </table>
+        ) : null}
+        {detail.request === undefined ? (
+          <p className="dsh-context-track-muted">{t('notSeen')}</p>
+        ) : (
+          <JsonView value={detail.request} t={t} />
+        )}
+      </section>
+    </div>
+  )
 }
 
 function contentBlocks(value: unknown): Record<string, unknown>[] {
@@ -626,35 +710,10 @@ function sourceCell(message: unknown, category: CategoryId | undefined): string 
   return sourceLabel(message)
 }
 
-function JsonOrMarkdown({ value, t }: { value: unknown; t: (key: TrackKey) => string }): ReactNode {
-  if (typeof value === 'string') {
-    const parsed = tryParse(value)
-    if (parsed !== undefined) return <JsonView value={parsed} t={t} />
-    return (
-      <div className="dsh-context-track-prose">
-        <MarkdownView text={value} />
-      </div>
-    )
-  }
-  return <JsonView value={value} t={t} />
-}
-
-function tryParse(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown
-  } catch {
-    return undefined
-  }
-}
-
 function summarize(value: unknown): string {
   const text = typeof value === 'string' ? value : value === undefined ? '' : stringify(value)
   const flat = text.replace(/\s+/g, ' ').trim()
   return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
-}
-
-function chipId(block: Record<string, unknown>, index: number): string {
-  return typeof block.id === 'string' ? block.id : `chip-${index}`
 }
 
 function labelStatus(status: string, t: (key: TrackKey) => string): string {

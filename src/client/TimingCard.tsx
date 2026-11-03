@@ -1,4 +1,4 @@
-/** Wall clock, wait, think, and first response. Per-call rows live on the tree hover, not here. */
+/** Wall clock, wait, think, and first response for the selected turn. */
 import type { ReactNode } from 'react'
 import type { TurnReport } from '../shared/report.js'
 import { formatDuration } from './format.js'

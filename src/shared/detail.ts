@@ -109,12 +109,18 @@ export interface CompactionDetail {
   error?: string
 }
 
+export type SearchSource =
+  | { kind: 'tool'; name: string; callId: string; arguments?: unknown }
+  | { kind: 'attempt'; step: number; attempt?: number; output?: unknown }
+
 export interface SearchDetail {
   missing?: false
   kind: 'sidecar'
   purpose: 'web-search'
   status: string
   request: unknown
+  /** The tool call or model attempt that was running when the search was requested. */
+  source?: SearchSource
 }
 
 export type NodeDetail =
