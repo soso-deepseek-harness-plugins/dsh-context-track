@@ -3,13 +3,18 @@
  * session-scoped. The left-sidebar centre page follows the session the shell
  * retains for the main view. Detail reads committed logs. It does not
  * subscribe to the token stream.
+ *
+ * The panel is a shell: a header, a horizontal round strip, a collapsible
+ * context band, and a tree beside a detail pane. Narrow panels keep the tree
+ * full width and slide the detail over it.
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { CategoryId } from '../shared/classify.js'
 import { isMissing, type MissingDetail, type NodeDetail } from '../shared/detail.js'
-import { billOf, sumUsage } from '../shared/figures.js'
+import { usageFigure, type Figure } from '../shared/figures.js'
 import {
   defaultExpanded,
   emptyTrack,
@@ -24,12 +29,20 @@ import '../shared/projection.js'
 import type { TurnReport } from '../shared/report.js'
 import { Detail } from './Detail.js'
 import { abbreviate, copyText, formatDuration, type ShownNumber } from './format.js'
-import { layoutForWidth } from './layout.js'
+import {
+  DEFAULT_TREE_RATIO,
+  GRIP_STEP_PX,
+  clampTreeRatio,
+  isSideBySide,
+  layoutForWidth,
+  type Tier,
+} from './layout.js'
 import type { TrackKey } from './locales.js'
 import { ensureStyles } from './styles.js'
 import './slots.js'
-import { compactionPresent, reclaimedOf, TokenCard } from './TokenCard.js'
-import { Tree, visibleTargets, type TreeCursor } from './Tree.js'
+import { compactionPresent, ContextBand, reclaimedOf } from './TokenCard.js'
+import { Tree, collectKeys, visibleTargets, type TreeCursor } from './Tree.js'
+import { FigureView } from './widgets.js'
 
 export interface TrackInject {
   getNode(sessionId: string, nodeId: string): Promise<RemoteResult<NodeDetail>>
@@ -42,6 +55,28 @@ export interface TrackInject {
 
 /** Content reappears once the drawer slide has landed, never mid-animation. */
 const DETAIL_REVEAL_MS = 190
+
+/** Guarded storage: a blocked localStorage must never stop the first paint. */
+const STORE_PREFIX = 'dsh-context-track:'
+
+function readStore<T>(key: string, fallback: T): T {
+  try {
+    if (typeof localStorage === 'undefined') return fallback
+    const raw = localStorage.getItem(STORE_PREFIX + key)
+    return raw === null ? fallback : JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+function writeStore(key: string, value: unknown): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(STORE_PREFIX + key, JSON.stringify(value))
+  } catch {
+    /* private mode or a full quota: the panel still works, it just forgets. */
+  }
+}
 
 type SessionView = PropsRuntime<'conversation.view'>
 
@@ -77,12 +112,15 @@ export function TraceMain(props: Omit<TracePageProps, 'sessionId' | 'host'>): Re
   return <TracePage {...props} host="main" sessionId={sessionId} />
 }
 
-/** Turn rail and the selected turn's token, timing, and tree. */
+/** Header, round strip, context band, and the selected turn's tree and detail. */
 export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }: TracePageProps): ReactNode {
   ensureStyles()
   const rootRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLDivElement>(null)
-  const layout = usePanelLayout(rootRef)
+  const splitRef = useRef<HTMLDivElement>(null)
+  const selectedChipRef = useRef<HTMLButtonElement>(null)
+  const lastTrigger = useRef<{ kind: 'node' | 'turn'; id: string } | undefined>(undefined)
+  const tier = usePanelTier(rootRef)
   const rootClass = host === 'main' ? 'dsh-context-track dsh-context-track-main' : 'dsh-context-track'
   const list = useSessions(state => state)
   const track = sessionId === undefined ? undefined : readTrack(list.projectionsBySession, sessionId) ?? emptyTrack()
@@ -98,11 +136,19 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const [eventSeq, setEventSeq] = useState<number | undefined>(undefined)
   const [detail, setDetail] = useState<NodeDetail | undefined>(undefined)
   const [report, setReport] = useState<TurnReport | MissingDetail | undefined>(undefined)
-  const [paneSize, setPaneSize] = useState<Partial<Record<PaneName, number>>>({})
   const [detailOpen, setDetailOpen] = useState(true)
   const [detailShown, setDetailShown] = useState(true)
+  /* Narrow panels slide the detail over the tree only after a click, never on an arrow-key move. */
+  const [overlayOpen, setOverlayOpen] = useState(false)
+  const [bandOpen, setBandOpen] = useState(() => readStore<boolean>('band', false))
+  const [ratio, setRatio] = useState(() => {
+    const stored = readStore<number>('split', DEFAULT_TREE_RATIO)
+    return Number.isFinite(stored) ? stored : DEFAULT_TREE_RATIO
+  })
+  const [focusCategory, setFocusCategory] = useState<CategoryId | undefined>(undefined)
   const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  const narrow = !isSideBySide(tier)
   const pickedTurn = turns.find(turn => turn.id === picked)
   const selectedTurn = marker !== undefined
     ? undefined
@@ -119,22 +165,49 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     setAttemptId('')
     setEventSeq(undefined)
     setActiveKey(undefined)
+    setFocusCategory(undefined)
   }, [sessionId])
 
   useEffect(() => () => { clearTimeout(revealTimer.current) }, [])
 
+  useEffect(() => { writeStore('band', bandOpen) }, [bandOpen])
+  useEffect(() => { writeStore('split', ratio) }, [ratio])
+
+  const selectedTurnId = selectedTurn?.id
+  useEffect(() => {
+    const chip = selectedChipRef.current
+    if (chip !== null) chip.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [selectedTurnId])
+
   /* Collapse hides the body first so the slide never lays it out at strip width.
    * Expand reveals the body once the slide has landed. The body stays mounted
    * either way, so views, folds, and scroll survive a collapse. */
-  const toggleDetail = () => {
+  const collapseDetail = () => {
     clearTimeout(revealTimer.current)
-    if (detailOpen) {
-      setDetailShown(false)
-      setDetailOpen(false)
-      return
-    }
+    setDetailShown(false)
+    setDetailOpen(false)
+    setOverlayOpen(false)
+    returnFocus()
+  }
+
+  const openDetail = () => {
+    setOverlayOpen(true)
+    if (detailOpen && detailShown) return
     setDetailOpen(true)
+    clearTimeout(revealTimer.current)
     revealTimer.current = setTimeout(() => { setDetailShown(true) }, DETAIL_REVEAL_MS)
+  }
+
+  const returnFocus = () => {
+    const trigger = lastTrigger.current
+    if (trigger === undefined) return
+    const root = rootRef.current
+    if (root === null) return
+    const selector = trigger.kind === 'turn'
+      ? `[data-turn-id="${trigger.id}"]`
+      : `[data-node-id="${trigger.id}"] .dsh-context-track-label`
+    const element = root.querySelector<HTMLElement>(selector)
+    element?.focus()
   }
 
   const revision = openRevision(list.projectionsBySession, node)
@@ -182,7 +255,15 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const cursors = sessionId === undefined
     ? []
     : visibleTargets(sessionId, track, open, id => readTrack(list.projectionsBySession, id))
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      if (showDetail && hasSelection) {
+        event.preventDefault()
+        collapseDetail()
+      }
+      return
+    }
     if (sessionId === undefined || turns.length === 0) return
     const target = event.target
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
@@ -213,21 +294,26 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     if (sessionId === undefined) return
     setMarker(undefined)
     setActiveKey(cursor.key)
-    if (pin) setPinned(true)
+    if (pin) {
+      setPinned(true)
+      setOverlayOpen(true)
+    }
     const owner = turnContaining(turns, cursor.activateId) ?? turnContaining(turns, cursor.nodeId)
     if (owner !== undefined) setPicked(owner)
     if (cursor.kind === 'turn') {
-      setNode(undefined)
+      lastTrigger.current = { kind: 'turn', id: cursor.nodeId }
+      setNode({ sessionId, nodeId: cursor.nodeId })
       setDetail(undefined)
       setAttemptId('')
       return
     }
+    lastTrigger.current = { kind: 'node', id: cursor.nodeId }
     setNode({ sessionId: cursor.sessionId, nodeId: cursor.activateId })
     setAttemptId(cursor.attemptId ?? '')
   }
 
   if (sessionId === undefined) {
-    return <div className={rootClass}><p className="dsh-context-track-empty">{t('empty')}</p></div>
+    return <div className={rootClass} data-tier={tier}><p className="dsh-context-track-empty">{t('empty')}</p></div>
   }
 
   const shownReport = isTurnReport(report) ? report : undefined
@@ -235,80 +321,165 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const trackOf = (id: string) => readTrack(list.projectionsBySession, id)
   const nodeKey = `${sessionId}:${node?.nodeId ?? marker ?? 'turn'}`
   const failed = node !== undefined && detail !== undefined && isMissing(detail)
+  const hasSelection = node !== undefined || marker !== undefined
+  const sideBySide = isSideBySide(tier)
+  const showDetail = sideBySide ? detailOpen : overlayOpen && hasSelection
+  const headTotal = shownReport?.consumption.total ?? (selectedTurn !== undefined ? totalFigure(selectedTurn) : { basis: 'absent' as const })
+  const headClock = shownReport?.timing.elapsed ?? (selectedTurn !== undefined ? clockFigure(selectedTurn) : { basis: 'absent' as const })
+  const crumbs = crumbTrail(track, turns, node?.nodeId, marker, translate)
+
+  const pinTurn = (id: string) => {
+    lastTrigger.current = { kind: 'turn', id }
+    setMarker(undefined)
+    setPicked(id)
+    setNode({ sessionId, nodeId: id })
+    setPinned(true)
+    setActiveKey(`${sessionId}:${id}`)
+    setAttemptId('')
+    if (sideBySide) openDetail()
+  }
+
+  const selectNode = (ownerSession: string, nodeId: string) => {
+    lastTrigger.current = { kind: 'node', id: nodeId }
+    setMarker(undefined)
+    setNode({ sessionId: ownerSession, nodeId })
+    setPinned(true)
+    setDetailOpen(true)
+    setDetailShown(true)
+    setOverlayOpen(true)
+    const owner = turnContaining(turns, nodeId)
+    if (owner !== undefined) setPicked(owner)
+  }
+
+  const chooseCrumb = (nodeId: string) => {
+    if (turns.some(turn => turn.id === nodeId)) {
+      setNode({ sessionId, nodeId })
+      setAttemptId('')
+      setMarker(undefined)
+      return
+    }
+    selectNode(sessionId, nodeId)
+  }
+
+  const moveTurn = (delta: number) => {
+    if (turns.length === 0) return
+    const current = selectedTurn === undefined ? turns.length - 1 : turns.findIndex(turn => turn.id === selectedTurn.id)
+    const next = turns[Math.min(Math.max(current + delta, 0), turns.length - 1)]
+    if (next !== undefined && next.id !== selectedTurn?.id) pinTurn(next.id)
+  }
+
+  const bandCategory = (category: CategoryId) => {
+    setFocusCategory(category)
+    setDetailOpen(true)
+    setDetailShown(true)
+    setOverlayOpen(true)
+  }
+
   return (
     <div
       ref={rootRef}
       className={rootClass}
-      data-layout={layout}
-      data-covering="false"
+      data-tier={tier}
+      data-band={bandOpen ? 'open' : 'closed'}
+      data-detail={showDetail ? 'open' : 'closed'}
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
-      <Rail
-        entries={railEntries(track?.root ?? [])}
-        selectedId={selectedTurn?.id}
-        hoverId={hover}
-        pinned={pinned}
-        size={paneSize.rail}
-        t={translate}
-        onHover={setHover}
-        onTurn={id => {
-          setMarker(undefined)
-          setPicked(id)
-          setNode({ sessionId, nodeId: id })
-          setPinned(true)
-          setActiveKey(`${sessionId}:${id}`)
-          setAttemptId('')
-        }}
-        onMark={id => {
-          setMarker(id)
-          setNode({ sessionId, nodeId: id })
-          setPinned(true)
-          setActiveKey(`${sessionId}:${id}`)
-        }}
-      />
-      {turns.length === 0 && marker === undefined ? (
+      <header className="dsh-context-track-head" data-pane="header">
+        <span className="dsh-context-track-head-title" data-head="turn">
+          {selectedTurn !== undefined ? t('turn').replace('{n}', String(selectedTurn.turn)) : t('panel')}
+        </span>
+        {selectedTurn !== undefined ? (
+          <span className={`dsh-context-track-status-${selectedTurn.status}`} data-head="status" data-status={selectedTurn.status}>
+            {selectedTurn.status === 'ok' ? null : t(selectedTurn.status)}
+          </span>
+        ) : null}
+        {watching.length > 0 ? <span className="dsh-context-track-head-watching" data-watching>{t('watching').replace('{name}', watching)}</span> : null}
+        <span className="dsh-context-track-head-spacer" />
+        <span className="dsh-context-track-head-stat" data-head="total">
+          <span className="dsh-context-track-head-label">{t('total')}</span>
+          <FigureView figure={headTotal} t={translate} />
+        </span>
+        <span className="dsh-context-track-head-stat" data-head="elapsed">
+          <span className="dsh-context-track-head-label">{t('elapsed')}</span>
+          <FigureView figure={headClock} t={translate} showBasis={false} format={formatDuration} />
+        </span>
+        <button
+          type="button"
+          className="dsh-context-track-head-band"
+          data-head-band
+          aria-expanded={bandOpen}
+          aria-label={bandOpen ? t('bandCollapse') : t('bandExpand')}
+          onClick={() => { setBandOpen(value => !value) }}
+        >
+          {t('bandTitle')}
+        </button>
+        <details className="dsh-context-track-more" data-more-menu>
+          <summary>{t('more')}</summary>
+          <div className="dsh-context-track-more-menu">
+            <button type="button" onClick={() => { bulk(true) }}>{t('expandAll')}</button>
+            <button type="button" onClick={() => { bulk(false) }}>{t('collapseAll')}</button>
+            <button type="button" onClick={() => { setRatio(DEFAULT_TREE_RATIO) }}>{t('resetSplit')}</button>
+          </div>
+        </details>
+      </header>
+      {turns.length === 0 ? (
         <p className="dsh-context-track-empty">{t('noCalls')}</p>
       ) : (
         <>
-          <Grip
-            pane="rail"
-            vertical={layout === 'narrow'}
-            min={112}
-            keep={280}
-            onSize={px => { setPaneSize(current => ({ ...current, rail: px })) }}
+          <TurnStrip
+            entries={railEntries(track?.root ?? [])}
+            selectedId={selectedTurn?.id}
+            hoverId={hover}
+            pinned={pinned}
+            total={turns.length}
+            selectedRef={selectedChipRef}
+            t={translate}
+            onHover={setHover}
+            onTurn={pinTurn}
+            onMove={moveTurn}
+            onMark={id => {
+              lastTrigger.current = { kind: 'node', id }
+              setMarker(id)
+              setNode({ sessionId, nodeId: id })
+              setPinned(true)
+              setActiveKey(`${sessionId}:${id}`)
+              setDetailOpen(true)
+              setDetailShown(true)
+              setOverlayOpen(true)
+            }}
           />
-          <div className="dsh-context-track-body">
           {marker === undefined && shownReport !== undefined ? (
-            <div className="dsh-context-track-bill" data-bill data-rows="2" style={paneFlex(paneSize.bill)}>
-              {watching.length > 0 ? <p data-watching>{t('watching').replace('{name}', watching)}</p> : null}
-              <TokenCard
+            <div className="dsh-context-track-band-wrap" data-pane="band">
+              <ContextBand
                 report={shownReport}
+                open={bandOpen}
                 activeSeq={eventSeq}
                 trackOf={trackOf}
                 t={translate}
+                onToggle={() => { setBandOpen(value => !value) }}
+                onCategory={bandCategory}
                 onGap={seq => {
                   setEventSeq(seq)
                   const match = shownReport.events.find(item => item.seq === seq)
                   if (match?.nodeId !== undefined) {
+                    lastTrigger.current = { kind: 'node', id: match.nodeId }
                     setNode({ sessionId, nodeId: match.nodeId })
                     setPinned(true)
+                    setDetailOpen(true)
+                    setDetailShown(true)
+                    setOverlayOpen(true)
                   }
                 }}
               />
             </div>
           ) : null}
-          {marker === undefined && shownReport !== undefined ? (
-            <Grip
-              pane="bill"
-              vertical={layout === 'narrow'}
-              min={180}
-              keep={220}
-              onSize={px => { setPaneSize(current => ({ ...current, bill: px })) }}
-            />
-          ) : null}
-          <div className="dsh-context-track-split">
-            <div className="dsh-context-track-tree" style={paneFlex(paneSize.tree)}>
+          <div className="dsh-context-track-split" data-pane="split" ref={splitRef}>
+            <div
+              className="dsh-context-track-tree"
+              data-pane="tree"
+              style={sideBySide && showDetail ? { flex: `0 1 ${ratio * 100}%` } : { flex: '1 1 auto' }}
+            >
               <Tree
                 sessionId={sessionId}
                 track={track}
@@ -318,15 +489,13 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                   setOpen(current => toggleExpanded(current, key, defaultExpanded(kind, status)))
                 }}
                 selected={node}
-                onSelect={(id, nodeId) => {
-                  setMarker(undefined)
-                  setNode({ sessionId: id, nodeId })
-                  setPinned(true)
-                  const owner = turnContaining(turns, nodeId)
-                  if (owner !== undefined) setPicked(owner)
+                onSelect={selectNode}
+                onActivate={cursor => {
+                  lastTrigger.current = { kind: 'node', id: cursor.nodeId }
+                  setActiveKey(cursor.key)
                 }}
-                onActivate={cursor => { setActiveKey(cursor.key) }}
                 onAttempt={id => { setAttemptId(id) }}
+                onBulk={(expand, keys) => { bulk(expand, keys) }}
                 t={translate}
                 now={Date.now()}
                 turnBill={shownReport !== undefined && compactionPresent(shownReport) ? {
@@ -336,152 +505,167 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 } : undefined}
               />
             </div>
-            <Grip
-              pane="tree"
-              vertical={layout === 'narrow'}
-              min={160}
-              keep={160}
-              onSize={px => { setPaneSize(current => ({ ...current, tree: px })) }}
-            />
-            <div className="dsh-context-track-detail" data-collapsed={detailOpen ? undefined : 'true'} ref={detailRef}>
-              <button
-                type="button"
-                className="dsh-context-track-detail-toggle"
-                data-detail-toggle
-                aria-expanded={detailOpen}
-                aria-label={detailOpen ? translate('collapse') : translate('expand')}
-                onClick={toggleDetail}
+            {sideBySide && showDetail ? (
+              <Grip
+                label={t('adjustSplit')}
+                onRatio={next => { setRatio(next) }}
+                onStep={delta => {
+                  const room = splitRef.current?.getBoundingClientRect().width ?? 0
+                  setRatio(current => {
+                    if (room <= 0) return current
+                    return clampTreeRatio((current * room + delta) / room, room)
+                  })
+                }}
+                onReset={() => { setRatio(DEFAULT_TREE_RATIO) }}
+              />
+            ) : null}
+            {showDetail ? (
+              <div
+                className="dsh-context-track-detail"
+                data-pane="detail"
+                data-overlay={narrow ? 'true' : undefined}
+                data-collapsed={detailShown ? undefined : 'true'}
+                ref={detailRef}
               >
-                <span aria-hidden="true">{detailOpen ? '▸' : '◂'}</span>
-                {detailOpen ? null : <span>{translate('detailPane')}</span>}
-              </button>
-              <div className="dsh-context-track-detail-body" hidden={!detailShown}>
-                {failed ? (
-                  <p className="dsh-context-track-muted">{t('missing')}</p>
-                ) : (
-                  <Detail
-                    key={nodeKey}
-                    detail={node === undefined && marker === undefined ? undefined : detail}
-                    nodeKey={nodeKey}
-                    t={translate}
-                    scrollerRef={detailRef}
-                    onOpenChild={() => {
-                      if (node === undefined) return
-                      revealTool(sessionId, node.nodeId, turns, setOpen)
-                    }}
-                  />
-                )}
+                <div className="dsh-context-track-detail-body" hidden={!detailShown}>
+                  {failed ? (
+                    <p className="dsh-context-track-muted">{t('missing')}</p>
+                  ) : (
+                    <Detail
+                      key={nodeKey}
+                      detail={node === undefined && marker === undefined ? undefined : detail}
+                      nodeKey={nodeKey}
+                      t={translate}
+                      scrollerRef={detailRef}
+                      crumbs={crumbs}
+                      onCrumb={chooseCrumb}
+                      onClose={collapseDetail}
+                      onBack={narrow ? collapseDetail : undefined}
+                      focusCategory={focusCategory}
+                      onOpenChild={() => {
+                        if (node === undefined) return
+                        revealTool(sessionId, node.nodeId, turns, setOpen)
+                      }}
+                    />
+                  )}
+                </div>
               </div>
-            </div>
-          </div>
+            ) : null}
           </div>
         </>
       )}
     </div>
   )
+
+  function bulk(expand: boolean, keys?: readonly string[]): void {
+    const all = keys ?? collectKeys(sessionId!, track, trackOf)
+    setOpen(current => {
+      const next = { ...current }
+      for (const key of all) next[key] = expand
+      return next
+    })
+  }
 }
 
-function Rail({
-  entries, selectedId, hoverId, pinned, size, t, onHover, onTurn, onMark,
+/** One row per round, or a thin label for a sidecar that sat between rounds. */
+function TurnStrip({
+  entries, selectedId, hoverId, pinned, total, selectedRef, t, onHover, onTurn, onMove, onMark,
 }: {
   entries: RailEntry[]
   selectedId?: string
   hoverId?: string
   pinned: boolean
-  size?: number
+  total: number
+  selectedRef: { current: HTMLButtonElement | null }
   t: (key: TrackKey) => string
   onHover: (id: string | undefined) => void
   onTurn: (id: string) => void
+  onMove: (delta: number) => void
   onMark: (id: string) => void
 }): ReactNode {
+  const index = entries.find(turn => turn.kind === 'turn' && turn.node.id === selectedId)
+  const position = index !== undefined && index.kind === 'turn' ? index.node.turn : undefined
   return (
-    <div className="dsh-context-track-rail" style={paneFlex(size)} onMouseLeave={() => { onHover(undefined) }}>
+    <div
+      className="dsh-context-track-strip"
+      data-pane="strip"
+      role="tablist"
+      aria-label={t('stripLabel')}
+      onMouseLeave={() => { onHover(undefined) }}
+      onKeyDown={event => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+        event.preventDefault()
+        event.stopPropagation()
+        onMove(event.key === 'ArrowRight' ? 1 : -1)
+      }}
+    >
       {entries.map(entry => entry.kind === 'turn' ? (
-        <TurnFace
+        <button
           key={entry.node.id}
-          node={entry.node}
-          current={selectedId === entry.node.id}
-          hover={hoverId === entry.node.id}
-          pinned={pinned && selectedId === entry.node.id}
-          t={t}
-          onHover={() => { onHover(entry.node.id) }}
-          onTurn={() => { onTurn(entry.node.id) }}
-        />
+          type="button"
+          className="dsh-context-track-turn"
+          role="tab"
+          aria-selected={selectedId === entry.node.id}
+          aria-current={selectedId === entry.node.id ? 'true' : undefined}
+          data-turn-id={entry.node.id}
+          data-turn={entry.node.turn}
+          data-hover={hoverId === entry.node.id ? 'true' : undefined}
+          data-pinned={pinned && selectedId === entry.node.id ? 'true' : undefined}
+          ref={selectedId === entry.node.id ? selectedRef : undefined}
+          onMouseEnter={() => { onHover(entry.node.id) }}
+          onClick={() => { onTurn(entry.node.id) }}
+        >
+          <span className={`dsh-context-track-dot dsh-context-track-status-${entry.node.status}`} data-status={entry.node.status} />
+          <span className="dsh-context-track-turn-name">{entry.node.turn}</span>
+          {entry.node.status === 'ok' ? null : (
+            <span className={`dsh-context-track-status-${entry.node.status}`}>{t(entry.node.status)}</span>
+          )}
+          {entry.node.startTime !== undefined && entry.node.endTime !== undefined ? (
+            <CopySpan shown={formatDuration(entry.node.endTime - entry.node.startTime)} />
+          ) : null}
+          {selectedId === entry.node.id ? <TurnTotal node={entry.node} /> : null}
+        </button>
       ) : (
         <button
           key={entry.node.id}
           type="button"
           className="dsh-context-track-mark"
           data-mark={entry.node.id}
+          title={sidecarName(entry.node.purpose, t)}
           onClick={() => { onMark(entry.node.id) }}
         >
-          {entry.node.purpose === 'session-title' ? t('title') : entry.node.purpose === 'compaction' ? t('compaction') : t('search')}
+          <span>{sidecarName(entry.node.purpose, t)}</span>
         </button>
       ))}
+      {total > 6 && position !== undefined ? (
+        <span className="dsh-context-track-strip-count" data-strip-count>
+          {t('roundIndex').replace('{n}', String(position)).replace('{total}', String(total))}
+        </span>
+      ) : null}
     </div>
   )
 }
 
-/** Name on the first line, clock and tokens on the second, so a narrow rail cannot glue them together. */
-function TurnFace({
-  node, current, hover, pinned, t, onHover, onTurn,
-}: {
-  node: TurnNode
-  current: boolean
-  hover: boolean
-  pinned: boolean
-  t: (key: TrackKey) => string
-  onHover: () => void
-  onTurn: () => void
-}): ReactNode {
-  const clock = turnClock(node)
+/** The selected chip carries the round total; every chip would be too wide. */
+function TurnTotal({ node }: { node: TurnNode }): ReactNode {
   const total = turnTotal(node)
+  if (total === undefined) return null
   return (
-    <button
-      type="button"
-      className="dsh-context-track-turn"
-      aria-current={current ? 'true' : undefined}
-      data-hover={hover ? 'true' : undefined}
-      data-pinned={pinned ? 'true' : undefined}
-      onMouseEnter={onHover}
-      onClick={onTurn}
-    >
-      <span className="dsh-context-track-turn-line">
-        <span className={`dsh-context-track-dot dsh-context-track-status-${node.status}`} data-status={node.status} />
-        <span className="dsh-context-track-turn-name">{t('round').replace('{n}', String(node.turn))}</span>
-        {node.status === 'ok' ? null : <span className={`dsh-context-track-status-${node.status}`}>{t(node.status)}</span>}
-      </span>
-      {clock === undefined && total === undefined ? null : (
-        <span className="dsh-context-track-turn-meta">
-          {clock !== undefined ? <CopySpan shown={formatDuration(clock)} /> : null}
-          {total !== undefined ? <CopySpan shown={abbreviate(total)} /> : null}
-        </span>
-      )}
-    </button>
+    <span className="dsh-context-track-turn-total" data-turn-total>
+      <CopySpan shown={abbreviate(total)} />
+    </span>
   )
 }
 
-type PaneName = 'rail' | 'bill' | 'tree'
-
-function paneFlex(px: number | undefined): { flex: string } | undefined {
-  return px === undefined ? undefined : { flex: `0 1 ${px}px` }
-}
-
-/** Drag the edge of the previous column. The next column keeps the leftover space. */
+/** Drag the tree edge. The detail keeps the leftover space. */
 function Grip({
-  pane, vertical, min, keep, onSize,
+  label, onRatio, onStep, onReset,
 }: {
-  pane: PaneName
-  vertical: boolean
-  min: number
-  /** Space left for the columns on the far side of this grip. */
-  keep: number
-  onSize: (px: number) => void
+  label: string
+  onRatio: (ratio: number) => void
+  onStep: (delta: number) => void
+  onReset: () => void
 }): ReactNode {
-  const resize = (origin: number, delta: number, room: number) => {
-    const max = room > min + keep ? room - keep : Math.max(min, origin)
-    onSize(Math.round(Math.min(Math.max(origin + delta, min), max)))
-  }
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
     const handle = event.currentTarget
@@ -491,13 +675,14 @@ function Grip({
     event.preventDefault()
     const columnBox = column.getBoundingClientRect()
     const parentBox = parent.getBoundingClientRect()
-    const origin = vertical ? columnBox.height : columnBox.width
-    const room = vertical ? parentBox.height : parentBox.width
-    const start = vertical ? event.clientY : event.clientX
+    const origin = columnBox.width
+    const room = parentBox.width
+    const start = event.clientX
     try { handle.setPointerCapture(event.pointerId) } catch { /* the pointer can leave before capture */ }
     handle.dataset.active = 'true'
     const move = (ev: PointerEvent) => {
-      resize(origin, (vertical ? ev.clientY : ev.clientX) - start, room)
+      if (room <= 0) return
+      onRatio(clampTreeRatio((origin + (ev.clientX - start)) / room, room))
     }
     const stop = () => {
       delete handle.dataset.active
@@ -510,28 +695,23 @@ function Grip({
     handle.addEventListener('pointercancel', stop)
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const arrows = event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'ArrowRight' || event.key === 'ArrowLeft'
-    if (!arrows) return
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
     event.stopPropagation()
-    const grow = vertical ? event.key === 'ArrowDown' : event.key === 'ArrowRight'
-    const shrink = vertical ? event.key === 'ArrowUp' : event.key === 'ArrowLeft'
-    if (!grow && !shrink) return
-    const column = event.currentTarget.previousElementSibling
-    if (!(column instanceof HTMLElement)) return
-    const box = column.getBoundingClientRect()
-    const origin = (vertical ? box.height : box.width) || min
-    resize(origin, grow ? 24 : -24, Number.POSITIVE_INFINITY)
+    onStep(event.key === 'ArrowRight' ? GRIP_STEP_PX : -GRIP_STEP_PX)
   }
   return (
     <div
       className="dsh-context-track-grip"
-      data-pane={pane}
+      data-pane="splitter"
       role="separator"
       tabIndex={0}
-      aria-orientation={vertical ? 'horizontal' : 'vertical'}
+      aria-orientation="vertical"
+      aria-label={label}
+      title={label}
       onPointerDown={onPointerDown}
       onKeyDown={onKeyDown}
+      onDoubleClick={onReset}
     />
   )
 }
@@ -551,15 +731,16 @@ function isTurnReport(value: TurnReport | MissingDetail | undefined): value is T
   return value !== undefined && !('missing' in value && value.missing === true)
 }
 
-function usePanelLayout(ref: { readonly current: HTMLDivElement | null }): 'wide' | 'narrow' {
-  const [layout, setLayout] = useState<'wide' | 'narrow'>('wide')
+/** Tracks the panel's own width, not the window. Starts narrow so the first frame never flashes wide. */
+function usePanelTier(ref: { readonly current: HTMLDivElement | null }): Tier {
+  const [tier, setTier] = useState<Tier>('narrow')
   useEffect(() => {
     const element = ref.current
     if (element === null) return undefined
     const apply = () => {
       const width = element.getBoundingClientRect().width
-      // Zero means the panel has not been measured yet, so the wide layout stays until a real width arrives.
-      if (width > 0) setLayout(layoutForWidth(width))
+      // Zero means the panel has not been measured yet; keep the narrow first frame.
+      if (width > 0) setTier(layoutForWidth(width))
     }
     apply()
     if (typeof ResizeObserver === 'undefined') return undefined
@@ -567,7 +748,7 @@ function usePanelLayout(ref: { readonly current: HTMLDivElement | null }): 'wide
     observer.observe(element)
     return () => { observer.disconnect() }
   }, [ref])
-  return layout
+  return tier
 }
 
 function CopySpan({ shown }: { shown: ShownNumber }): ReactNode {
@@ -593,14 +774,27 @@ function turnClock(node: TurnNode): number | undefined {
 }
 
 function turnTotal(node: TurnNode): number | undefined {
-  const usages = []
+  let total = 0
+  let seen = false
   for (const item of node.items) {
     if (item.kind !== 'step') continue
     for (const attempt of item.attempts) {
-      if (attempt.usage !== undefined) usages.push(attempt.usage)
+      if (attempt.usage?.totalTokens === undefined) continue
+      total += attempt.usage.totalTokens
+      seen = true
     }
   }
-  return billOf(sumUsage(usages)).total.value
+  return seen ? total : undefined
+}
+
+function totalFigure(node: TurnNode): Figure {
+  const total = turnTotal(node)
+  return total === undefined ? { basis: 'absent' } : usageFigure(total)
+}
+
+function clockFigure(node: TurnNode): Figure {
+  const clock = turnClock(node)
+  return clock === undefined ? { basis: 'absent' } : usageFigure(clock)
 }
 
 function cursorIndex(cursors: readonly TreeCursor[], activeKey: string | undefined, turnId: string | undefined): number {
@@ -648,6 +842,51 @@ function watchLabel(
     }
   }
   return nodeId ?? ''
+}
+
+/** `turn 2 / step 1 / llm_call 1`, each level clickable except the current one. */
+function crumbTrail(
+  track: TrackState | undefined,
+  turns: readonly TurnNode[],
+  nodeId: string | undefined,
+  marker: string | undefined,
+  t: (key: TrackKey) => string,
+): { id?: string; label: string }[] {
+  if (marker !== undefined && track !== undefined) {
+    const side = track.root.find(item => item.kind === 'sidecar' && item.id === marker)
+    if (side?.kind === 'sidecar') return [{ label: sidecarName(side.purpose, t) }]
+    return [{ label: sidecarName('web-search', t) }]
+  }
+  const turn = turns.find(item => item.id === nodeId) ?? turnFor(turns, nodeId)
+  const trail: { id?: string; label: string }[] = []
+  if (turn === undefined) return trail
+  trail.push({ label: t('turn').replace('{n}', String(turn.turn)), id: nodeId === turn.id ? undefined : turn.id })
+  if (nodeId === undefined || nodeId === turn.id) return trail
+  for (const item of turn.items) {
+    if (item.kind !== 'step') continue
+    if (item.id === nodeId) {
+      trail.push({ label: t('step').replace('{n}', String(item.step)) })
+      return trail
+    }
+    const attempt = item.attempts.find(entry => entry.id === nodeId)
+    const tool = item.tools.find(entry => entry.id === nodeId)
+    if (attempt === undefined && tool === undefined) continue
+    trail.push({ label: t('step').replace('{n}', String(item.step)), id: item.id })
+    if (attempt !== undefined) {
+      trail.push({ label: t('attempt').replace('{n}', String(attempt.attempt)) })
+    } else if (tool !== undefined) {
+      trail.push({ label: tool.name })
+    }
+    return trail
+  }
+  const side = turn.items.find(item => item.id === nodeId && item.kind === 'sidecar')
+  if (side?.kind === 'sidecar') trail.push({ label: sidecarName(side.purpose, t) })
+  return trail
+}
+
+function turnFor(turns: readonly TurnNode[], nodeId: string | undefined): TurnNode | undefined {
+  if (nodeId === undefined) return undefined
+  return turns.find(turn => turnContaining([turn], nodeId) !== undefined)
 }
 
 function turnContaining(turns: readonly TurnNode[], nodeId: string): string | undefined {

@@ -19,17 +19,26 @@ export interface DetailProps {
   t: (key: TrackKey) => string
   scrollerRef: RefObject<HTMLElement | null>
   onOpenChild?: () => void
+  /** Trail from the round to the open node. Each entry that carries an id is clickable. */
+  crumbs?: readonly { id?: string; label: string }[]
+  onCrumb?: (nodeId: string) => void
+  onClose?: () => void
+  /** Narrow tiers offer a return control instead of a collapse control. */
+  onBack?: () => void
+  /** Category the summary band jumped to. The first matching card scrolls into view. */
+  focusCategory?: CategoryId
 }
 
 type ViewName = 'reading' | 'json'
 
 /** One node. A visited view stays mounted, so its folds and scroll survive the round trip. */
 export function Detail({
-  detail, nodeKey, t, scrollerRef, onOpenChild,
+  detail, nodeKey, t, scrollerRef, onOpenChild, crumbs, onCrumb, onClose, onBack, focusCategory,
 }: DetailProps): ReactNode {
   const [view, setView] = useState<ViewName>('reading')
   const [slice, setSlice] = useState<unknown>(undefined)
   const [visited, setVisited] = useState<Readonly<Record<ViewName, boolean>>>({ reading: true, json: false })
+  const [copied, setCopied] = useState(false)
   const memory = useRef<Record<ViewName, number>>({ reading: 0, json: 0 })
   const viewRef = useRef(view)
   viewRef.current = view
@@ -38,6 +47,13 @@ export function Detail({
     const scroller = scrollerRef.current
     if (scroller !== null) scroller.scrollTop = memory.current[view]
   }, [view, nodeKey, scrollerRef])
+
+  useLayoutEffect(() => {
+    if (focusCategory === undefined) return
+    const scroller = scrollerRef.current
+    const card = scroller?.querySelector(`[data-focus="true"]`)
+    if (card instanceof HTMLElement) card.scrollIntoView?.({ block: 'nearest' })
+  }, [focusCategory, scrollerRef])
 
   const rememberScroll = () => {
     const scroller = scrollerRef.current
@@ -58,50 +74,95 @@ export function Detail({
     setView('json')
   }
 
-  if (detail === undefined) return <p className="dsh-context-track-muted">{t('hint')}</p>
-  if (isMissing(detail)) return <p className="dsh-context-track-muted">{t('missing')}</p>
+  const copyNode = () => {
+    if (detail === undefined) return
+    void copyText(JSON.stringify(detail, null, 2))
+    setCopied(true)
+    setTimeout(() => { setCopied(false) }, 1200)
+  }
 
+  const failed = detail !== undefined && isMissing(detail)
   return (
-    <div data-view={view} data-node={nodeKey}>
-      <div className="dsh-context-track-views">
-        <button type="button" data-view-toggle="reading" aria-pressed={view === 'reading'} onClick={() => { choose('reading') }}>
-          {t('reading')}
-        </button>
-        <button type="button" data-view-toggle="json" aria-pressed={view === 'json'} onClick={() => { choose('json') }}>
-          {t('jsonView')}
-        </button>
-      </div>
-      {/* The JSON pane precedes the reading pane so a first-match query finds it once both stay mounted. */}
-      {visited.json ? (
-        <div data-view-pane="json" hidden={view !== 'json'}>
-          <JsonPane detail={detail} slice={slice} t={t} />
+    <div data-view={view} data-node={nodeKey} className="dsh-context-track-detail-inner">
+      <header className="dsh-context-track-detail-head" data-detail-head>
+        {onBack !== undefined ? (
+          <button type="button" data-detail-back onClick={onBack}>
+            <span aria-hidden="true">←</span> {t('back')}
+          </button>
+        ) : null}
+        <nav className="dsh-context-track-crumbs" data-crumbs aria-label={t('detailPane')}>
+          {(crumbs ?? []).map((crumb, index) => {
+            const crumbId = crumb.id
+            return (
+              <span key={`${crumbId ?? 'self'}-${index}`} className="dsh-context-track-crumb">
+                {index > 0 ? <span aria-hidden="true" className="dsh-context-track-crumb-sep">/</span> : null}
+                {crumbId === undefined || onCrumb === undefined ? (
+                  <span data-crumb-current>{crumb.label}</span>
+                ) : (
+                  <button type="button" data-crumb={crumbId} onClick={() => { onCrumb(crumbId) }}>
+                    {crumb.label}
+                  </button>
+                )}
+              </span>
+            )
+          })}
+        </nav>
+        <div className="dsh-context-track-views">
+          <button type="button" data-view-toggle="reading" aria-pressed={view === 'reading'} onClick={() => { choose('reading') }}>
+            {t('reading')}
+          </button>
+          <button type="button" data-view-toggle="json" aria-pressed={view === 'json'} onClick={() => { choose('json') }}>
+            {t('jsonView')}
+          </button>
         </div>
-      ) : null}
-      <div data-view-pane="reading" hidden={view !== 'reading'}>
-        <Structured
-          detail={detail}
-          t={t}
-          onOpenChild={onOpenChild}
-          onSlice={openSlice}
-        />
-      </div>
+        <button type="button" data-copy-node aria-live="polite" onClick={copyNode}>
+          {copied ? t('copied') : t('copyJson')}
+        </button>
+        {onClose !== undefined ? (
+          <button type="button" data-detail-close aria-label={t('closeDetail')} onClick={onClose}>
+            <span aria-hidden="true">✕</span>
+          </button>
+        ) : null}
+      </header>
+      {detail === undefined ? <p className="dsh-context-track-muted">{t('hint')}</p> : null}
+      {failed ? <p className="dsh-context-track-muted">{t('missing')}</p> : null}
+      {detail === undefined || failed ? null : (
+        <>
+          {/* The JSON pane precedes the reading pane so a first-match query finds it once both stay mounted. */}
+          {visited.json ? (
+            <div data-view-pane="json" hidden={view !== 'json'}>
+              <JsonPane detail={detail} slice={slice} t={t} />
+            </div>
+          ) : null}
+          <div data-view-pane="reading" hidden={view !== 'reading'}>
+            <Structured
+              detail={detail}
+              t={t}
+              onOpenChild={onOpenChild}
+              onSlice={openSlice}
+              focusCategory={focusCategory}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }
 
 function Structured({
-  detail, t, onOpenChild, onSlice,
+  detail, t, onOpenChild, onSlice, focusCategory,
 }: {
   detail: Exclude<NodeDetail, { missing: true }>
   t: (key: TrackKey) => string
   onOpenChild?: () => void
   onSlice: (value: unknown) => void
+  focusCategory?: CategoryId
 }): ReactNode {
   if (detail.kind === 'attempt' || detail.kind === 'step') {
     return (
       <div data-io>
         <Facts detail={detail} t={t} />
-        <InputCards messages={detail.messages} tools={detail.tools} t={t} onSlice={onSlice} />
+        <InputCards messages={detail.messages} tools={detail.tools} t={t} onSlice={onSlice} focusCategory={focusCategory} />
         {detail.kind === 'attempt' ? (
           <OutputCards output={detail.output} usage={detail.usage} t={t} onSlice={onSlice} />
         ) : (
@@ -274,12 +335,13 @@ function formatCount(value: unknown): string {
 }
 
 function InputCards({
-  messages, tools, t, onSlice,
+  messages, tools, t, onSlice, focusCategory,
 }: {
   messages: unknown
   tools: unknown
   t: (key: TrackKey) => string
   onSlice: (value: unknown) => void
+  focusCategory?: CategoryId
 }): ReactNode {
   const list = Array.isArray(messages) ? messages : []
   const classified = useMemo(() => classifyWindow(list, tools), [list, tools])
@@ -288,7 +350,8 @@ function InputCards({
       <h3 className="dsh-context-track-section">{t('messages')}</h3>
       {list.map((message, index) => {
         const item = classified.items.find(entry => entry.message === message)
-        return <MessageCard key={index} message={message} item={item} t={t} onSlice={onSlice} />
+        const focused = focusCategory !== undefined && item?.category === focusCategory
+        return <MessageCard key={index} message={message} item={item} t={t} onSlice={onSlice} focused={focused} />
       })}
     </div>
   )
@@ -510,13 +573,14 @@ function ReadingBody({
 }
 
 function MessageCard({
-  message, item, t, onSlice, faint = false,
+  message, item, t, onSlice, faint = false, focused = false,
 }: {
   message: unknown
   item?: ClassifiedItem
   t: (key: TrackKey) => string
   onSlice: (value: unknown) => void
   faint?: boolean
+  focused?: boolean
 }): ReactNode {
   const text = messageText(message)
   const embedded = faint ? undefined : compositeJson(text)
@@ -538,6 +602,7 @@ function MessageCard({
       data-category={category}
       data-folded={folded && !open ? 'true' : undefined}
       data-clamped={clamped ? 'true' : undefined}
+      data-focus={focused ? 'true' : undefined}
     >
       <table className="dsh-context-track-meta">
         <tbody>

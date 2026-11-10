@@ -1,14 +1,16 @@
 /**
  * Panel chrome. Status colors come from the host alias tokens. Category bars
- * and JSON tokens use the small palette below. The conversation tab
- * and the right sidebar own the surrounding frame. The centre page opened
- * from the left sidebar starts below the macOS window strip.
+ * and JSON tokens use the small palette below. The shell is a header, a
+ * horizontal round strip, a collapsible context band, and a tree beside a
+ * detail pane. Narrow panels keep the tree full width and slide the detail over it.
  */
 export const traceCss = `
 .dsh-context-track {
   box-sizing: border-box;
+  position: relative;
   display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
   align-items: stretch;
   min-width: 0;
   /* The centre column clips overflow. A content-sized panel is cut off and cannot scroll. */
@@ -29,26 +31,12 @@ export const traceCss = `
   --dsh-json-string: light-dark(#a31515, #ce9178);
   --dsh-json-number: light-dark(#098658, #b5cea8);
   --dsh-json-boolean: light-dark(#0000ff, #569cd6);
+  --dsh-tree-bar: 2rem;
   /* /palette */
 }
 /* The centre column reaches the window edge when the left sidebar is collapsed. */
 [data-platform='darwin'] .dsh-context-track-main {
   padding-top: var(--dsh-frame-top-clearance, 0px);
-}
-.dsh-context-track-tree,
-.dsh-context-track-detail {
-  box-sizing: border-box;
-  flex: 1 1 16rem;
-  min-width: 0;
-  /* auto would keep each column as tall as its text, so overflow never starts. */
-  min-height: 0;
-  overflow: auto;
-  /* A scrollbar popping in would otherwise shove the wrapped text sideways. */
-  scrollbar-gutter: stable;
-  padding: 0.75rem;
-}
-.dsh-context-track-detail {
-  background: var(--dsw-alias-bg-base);
 }
 .dsh-context-track-empty,
 .dsh-context-track-muted {
@@ -64,230 +52,349 @@ export const traceCss = `
   border: 0;
   cursor: pointer;
 }
-.dsh-context-track-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 4.75rem 8.5rem;
+.dsh-context-track button:focus-visible,
+.dsh-context-track [role="separator"]:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-tertiary);
+  outline-offset: 1px;
+}
+.dsh-context-track-num {
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- header ---------- */
+.dsh-context-track-head {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  column-gap: 0.5rem;
+  gap: 0.5rem;
   min-width: 0;
-  width: 100%;
-  text-align: start;
-  color: inherit;
-}
-.dsh-context-track-row[aria-current="true"] {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-.dsh-context-track-cluster {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  min-width: 0;
-}
-.dsh-context-track-chevron {
-  flex: 0 0 1rem;
-  width: 1rem;
-  text-align: center;
-}
-.dsh-context-track-label {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
   overflow: hidden;
 }
-.dsh-context-track-label > span:first-child {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.dsh-context-track-head-title {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-weight: 650;
   white-space: nowrap;
 }
-.dsh-context-track-status-ok { color: var(--dsw-alias-state-success-primary); }
-.dsh-context-track-status-error,
-.dsh-context-track-status-aborted { color: var(--dsw-alias-state-error-primary); }
-.dsh-context-track-status-running { color: var(--dsw-alias-label-tertiary); }
-.dsh-context-track-children {
+.dsh-context-track-head-watching {
+  flex: 0 1 auto;
   min-width: 0;
-}
-.dsh-context-track-card,
-.dsh-context-track-block {
-  background: var(--dsw-alias-bg-layer-2);
-  border: 1px solid var(--dsw-alias-border-l2);
-}
-.dsh-context-track-block {
-  margin: 0 0 0.7rem;
-  padding: 0.7rem 0.8rem 0.6rem;
-  border-radius: 0.55rem;
-}
-.dsh-context-track-block[data-category="system"] { border-inline-start: 3px solid var(--dsh-cat-system); }
-.dsh-context-track-block[data-category="user"] { border-inline-start: 3px solid var(--dsw-alias-label-secondary); }
-.dsh-context-track-block[data-category="injection"] { border-inline-start: 3px solid var(--dsh-cat-injection); }
-.dsh-context-track-block[data-category="skill"] { border-inline-start: 3px solid var(--dsh-cat-skill); }
-.dsh-context-track-block[data-category="tool-results"] { border-inline-start: 3px solid var(--dsh-cat-results); }
-.dsh-context-track-block[data-category="history"] { border-inline-start: 3px solid var(--dsh-cat-history); }
-.dsh-context-track-block h3,
-.dsh-context-track-section {
-  margin: 0 0 0.45rem;
+  overflow: hidden;
   color: var(--dsw-alias-label-tertiary);
   font-size: 0.72rem;
-  font-weight: 650;
-}
-.dsh-context-track [data-facts] {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
-  gap: 0.85rem 1.35rem;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  margin: 0 0 0.75rem;
-  padding: 0.8rem 0.95rem;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 0.55rem;
-  background: var(--dsw-alias-bg-layer-2);
-}
-.dsh-context-track [data-facts] [data-fact] {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.22rem;
-  min-width: 0;
-}
-.dsh-context-track [data-facts] [data-fact="retry"] {
-  grid-column: 1 / -1;
-}
-.dsh-context-track-fact-label {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 0.68rem;
-  font-weight: 550;
-  line-height: 1.3;
-}
-.dsh-context-track-fact-value {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-  color: var(--dsw-alias-label-primary);
-  font-size: 0.84rem;
-  font-weight: 620;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-.dsh-context-track-fact-note {
-  padding: 0.02rem 0.38rem;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 0.65rem;
-  font-weight: 550;
-  line-height: 1.45;
-}
-.dsh-context-track [data-facts] [data-status="ok"] { color: var(--dsw-alias-state-success-primary); }
-.dsh-context-track [data-facts] [data-status="error"],
-.dsh-context-track [data-facts] [data-status="aborted"] { color: var(--dsw-alias-state-error-primary); }
-.dsh-context-track [data-facts] [data-status="running"] { color: var(--dsw-alias-label-tertiary); }
-.dsh-context-track-views {
-  display: inline-flex;
-  gap: 0.15rem;
-  margin: 0 0 0.75rem;
-  padding: 0.15rem;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-2);
-}
-.dsh-context-track-views button {
-  padding: 0.12rem 0.65rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  color: var(--dsw-alias-label-secondary);
-}
-.dsh-context-track-pre {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: ui-monospace, monospace;
-}
-.dsh-context-track-rail {
-  box-sizing: border-box;
-  flex: 0 0 12rem;
-  min-width: 7rem;
-  min-height: 0;
-  /* A horizontal scrollbar here is the round label escaping the column. */
-  overflow-x: hidden;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.75rem;
-}
-/* One line glued the round, the clock, and the token total into "112.3 s46.4k". */
-.dsh-context-track button.dsh-context-track-turn {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.15rem;
-  width: 100%;
-  min-width: 0;
-  padding: 0.3rem 0.35rem;
-  overflow: hidden;
-  text-align: start;
-}
-.dsh-context-track-turn-line,
-.dsh-context-track-turn-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-}
-.dsh-context-track-turn-line .dsh-context-track-dot {
-  flex: 0 0 auto;
-}
-.dsh-context-track-turn-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dsh-context-track-turn-line > .dsh-context-track-status-running,
-.dsh-context-track-turn-line > .dsh-context-track-status-error,
-.dsh-context-track-turn-line > .dsh-context-track-status-aborted {
+.dsh-context-track-head-spacer {
+  flex: 1 1 auto;
+  min-width: 0.25rem;
+}
+.dsh-context-track-head-stat {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: baseline;
+  gap: 0.3rem;
+  color: var(--dsw-alias-label-primary);
   font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.dsh-context-track-turn-meta {
-  padding-inline-start: 0.85rem;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-.dsh-context-track-turn-meta .dsh-context-track-num + .dsh-context-track-num::before {
-  content: "·";
-  margin-inline-end: 0.35rem;
+.dsh-context-track-head-label {
   color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
+}
+.dsh-context-track-head-band,
+.dsh-context-track-more > summary {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+.dsh-context-track-more > summary::-webkit-details-marker { display: none; }
+.dsh-context-track-head-band:hover,
+.dsh-context-track-more > summary:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-more {
+  position: relative;
+  flex: 0 0 auto;
+}
+.dsh-context-track-more-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 9rem;
+  padding: 0.3rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0.5rem;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: 0 6px 18px color-mix(in srgb, currentColor 16%, transparent);
+}
+.dsh-context-track-more-menu button {
+  padding: 0.22rem 0.45rem;
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+  text-align: start;
+}
+.dsh-context-track-more-menu button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ---------- round strip ---------- */
+.dsh-context-track-strip {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.2rem 0.6rem;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.dsh-context-track button.dsh-context-track-turn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  transition: background 140ms ease, border-color 140ms ease;
 }
 .dsh-context-track button.dsh-context-track-turn[data-hover="true"] {
   background: var(--dsw-alias-bg-layer-2);
 }
 .dsh-context-track button.dsh-context-track-turn[aria-current="true"] {
+  border-color: var(--dsw-alias-border-l2);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .dsh-context-track button.dsh-context-track-turn[data-pinned="true"] {
-  box-shadow: inset 0.125rem 0 0 var(--dsw-alias-label-secondary);
+  box-shadow: inset 0 -2px 0 var(--dsw-alias-label-secondary);
+}
+.dsh-context-track-turn-name {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.dsh-context-track-turn-total {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.7rem;
 }
 .dsh-context-track button.dsh-context-track-mark {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0.25rem 0.35rem;
-  text-align: start;
-  text-overflow: ellipsis;
+  flex: 0 0 auto;
+  padding: 0.08rem 0.4rem;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
   white-space: nowrap;
 }
-.dsh-context-track-body {
+.dsh-context-track button.dsh-context-track-mark:hover {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-tertiary);
+}
+.dsh-context-track-strip-count {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding-inline-start: 0.5rem;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- context band ---------- */
+.dsh-context-track-band-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.dsh-context-track-band {
+  position: relative;
   box-sizing: border-box;
+  min-width: 0;
+}
+.dsh-context-track-band-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 1.75rem;
+  padding: 0.1rem 0.75rem;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: 0.72rem;
+}
+.dsh-context-track-band-caption {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
+}
+.dsh-context-track-band-bar {
+  display: flex;
+  flex: 1 1 6rem;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 3rem;
+  max-width: 22rem;
+  height: 0.4rem;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track-band-bar[data-empty="true"] {
+  opacity: 0.4;
+}
+.dsh-context-track-band-seg {
+  flex: 0 1 auto;
+  min-width: 3px;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--dsh-cat-neutral);
+  --cat: var(--dsh-cat-neutral);
+}
+.dsh-context-track-band-seg[data-hue="tools"] { background: var(--dsh-cat-tools); }
+.dsh-context-track-band-seg[data-hue="results"] { background: var(--dsh-cat-results); }
+.dsh-context-track-band-seg[data-hue="system"] { background: var(--dsh-cat-system); }
+.dsh-context-track-band-seg[data-hue="skill"] { background: var(--dsh-cat-skill); }
+.dsh-context-track-band-seg[data-hue="history"] { background: var(--dsh-cat-history); }
+.dsh-context-track-band-seg[data-hue="injection"] { background: var(--dsh-cat-injection); }
+.dsh-context-track-band-seg[data-hue="neutral"] { background: var(--dsh-cat-neutral); }
+.dsh-context-track-band-gap {
+  flex: 0 0 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: repeating-linear-gradient(135deg, var(--dsw-alias-label-tertiary) 0 1px, transparent 1px 3px);
+}
+.dsh-context-track-band-gap[data-active="true"] {
+  outline: 1px solid var(--dsw-alias-state-error-primary);
+  outline-offset: 1px;
+}
+.dsh-context-track-legend {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.1rem 0.55rem;
+  min-width: 0;
+  overflow: hidden;
+}
+.dsh-context-track-legend-item {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+.dsh-context-track-legend-item:hover {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-context-track-legend-item i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 2px;
+  background: var(--dsh-cat-neutral);
+}
+.dsh-context-track-legend-item[data-hue="tools"] i { background: var(--dsh-cat-tools); }
+.dsh-context-track-legend-item[data-hue="results"] i { background: var(--dsh-cat-results); }
+.dsh-context-track-legend-item[data-hue="system"] i { background: var(--dsh-cat-system); }
+.dsh-context-track-legend-item[data-hue="skill"] i { background: var(--dsh-cat-skill); }
+.dsh-context-track-legend-item[data-hue="history"] i { background: var(--dsh-cat-history); }
+.dsh-context-track-legend-item[data-hue="injection"] i { background: var(--dsh-cat-injection); }
+.dsh-context-track-legend-item[data-hue="neutral"] i { background: var(--dsh-cat-neutral); }
+.dsh-context-track-legend-item b {
+  font-weight: 550;
+}
+.dsh-context-track-legend-more {
+  flex: 0 0 auto;
+  padding: 0 0.35rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.66rem;
+}
+.dsh-context-track-band-toggle {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.6rem;
+}
+.dsh-context-track-band-toggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-context-track-band-panel {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.5rem;
+  width: 100%;
+  max-height: 40vh;
+  padding: 0.5rem 0.75rem 0.65rem;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  overflow: auto;
+  animation: dsh-context-track-band-in 150ms ease-out;
+}
+.dsh-context-track-band-block {
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0.5rem;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track-band-block h3 {
+  margin: 0 0 0.35rem;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.dsh-context-track-band-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.6rem;
+  margin: 0.4rem 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.7rem;
+}
+.dsh-context-track-band-figures span {
+  white-space: nowrap;
+}
+@keyframes dsh-context-track-band-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- split ---------- */
+.dsh-context-track-split {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   flex-direction: row;
@@ -295,31 +402,36 @@ export const traceCss = `
   min-height: 0;
   overflow: hidden;
 }
-.dsh-context-track-split {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.dsh-context-track-bill {
+.dsh-context-track-tree,
+.dsh-context-track-detail {
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 22rem;
-  gap: 0.35rem;
-  min-width: 11rem;
+  min-width: 0;
+  /* auto would keep each column as tall as its text, so overflow never starts. */
   min-height: 0;
   overflow: auto;
-  padding: 0.75rem;
+  /* A scrollbar popping in would otherwise shove the wrapped text sideways. */
+  scrollbar-gutter: stable;
+  padding: 0.6rem 0.75rem;
 }
-/* The grip is the column edge. Dragging it sizes the previous pane; the next pane keeps what remains. */
+.dsh-context-track-tree {
+  container-type: inline-size;
+  container-name: tree;
+  min-width: 240px;
+  border-inline-end: 1px solid var(--dsw-alias-border-l2);
+}
+.dsh-context-track-detail {
+  flex: 1 1 auto;
+  min-width: 320px;
+  background: var(--dsw-alias-bg-base);
+}
+/* The edge is an 8px hit area with a single hairline down the middle. */
 .dsh-context-track-grip {
   box-sizing: border-box;
-  flex: 0 0 0.45rem;
+  flex: 0 0 8px;
   align-self: stretch;
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  margin-inline: -4px;
   cursor: col-resize;
   touch-action: none;
 }
@@ -335,37 +447,428 @@ export const traceCss = `
 .dsh-context-track-grip:hover::before,
 .dsh-context-track-grip:focus-visible::before,
 .dsh-context-track-grip[data-active="true"]::before {
-  width: 3px;
+  width: 2px;
   background: var(--dsw-alias-label-tertiary);
 }
-.dsh-context-track-bill-figures {
+
+/* ---------- call tree ---------- */
+.dsh-context-track-tree-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem 0.75rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: var(--dsh-tree-bar);
+  padding: 0 0.15rem;
+  background: var(--dsw-alias-bg-base);
+}
+.dsh-context-track-tree-title {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.dsh-context-track-tree-actions {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+.dsh-context-track-tree-actions button {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.66rem;
+}
+.dsh-context-track-tree-actions button:hover {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-context-track-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1rem 1rem minmax(0, 1fr) 3.5rem 6.5rem;
+  align-items: center;
+  column-gap: 0.25rem;
   min-width: 0;
+  min-height: 1.75rem;
+  padding-inline: 0.15rem;
+  border-radius: 0.375rem;
+  color: inherit;
+  text-align: start;
+  transition: background 120ms ease;
 }
-.dsh-context-track-num {
-  font-family: ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
+.dsh-context-track-row[data-row-kind="turn"] {
+  position: sticky;
+  top: var(--dsh-tree-bar);
+  z-index: 2;
+  min-height: 2rem;
+  background: var(--dsw-alias-bg-base);
 }
-.dsh-context-track-badge {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 0.75rem;
+.dsh-context-track-row:hover {
+  background: var(--dsw-alias-bg-layer-2);
 }
+.dsh-context-track-row[data-current="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: inset 2px 0 0 var(--dsw-alias-label-secondary);
+}
+.dsh-context-track-row[data-status="error"]::before,
+.dsh-context-track-row[data-status="aborted"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.2rem;
+  inset-inline-start: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-error-primary);
+}
+.dsh-context-track-row-rail {
+  display: none;
+}
+.dsh-context-track-children {
+  min-width: 0;
+  border-inline-start: 1px solid var(--dsw-alias-border-l2);
+  padding-inline-start: 0.25rem;
+}
+.dsh-context-track-turn-block + .dsh-context-track-turn-block {
+  margin-top: 0.6rem;
+}
+.dsh-context-track-chevron {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1rem;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.65rem;
+}
+.dsh-context-track-row .dsh-context-track-chevron:hover {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-context-track-glyph {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1rem;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dsh-context-track-row[data-status="error"] .dsh-context-track-glyph,
+.dsh-context-track-row[data-status="aborted"] .dsh-context-track-glyph {
+  color: var(--dsw-alias-state-error-primary);
+}
+.dsh-context-track-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+}
+.dsh-context-track-label-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track-label-extra {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track-summary {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track-label-status {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+}
+.dsh-context-track-status-ok { color: var(--dsw-alias-state-success-primary); }
+.dsh-context-track-status-error,
+.dsh-context-track-status-aborted { color: var(--dsw-alias-state-error-primary); }
+.dsh-context-track-status-running { color: var(--dsw-alias-label-tertiary); }
 .dsh-context-track-dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  flex: 0 0 auto;
+  width: 0.375rem;
+  height: 0.375rem;
   border-radius: 999px;
   background: currentColor;
 }
+.dsh-context-track-dot[data-status="running"] {
+  animation: dsh-context-track-breathe 1600ms ease-in-out infinite;
+}
+@keyframes dsh-context-track-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent); }
+}
+.dsh-context-track-col {
+  justify-self: end;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Number columns shrink with the tree, never with the window. */
+@container tree (max-width: 359px) {
+  .dsh-context-track-row { grid-template-columns: 1rem 1rem minmax(0, 1fr) 6.5rem; }
+  .dsh-context-track-row > [data-column="duration"] { display: none; }
+}
+@container tree (max-width: 299px) {
+  .dsh-context-track-row { grid-template-columns: 1rem 1rem minmax(0, 1fr); }
+  .dsh-context-track-row > [data-column="tokens"] { display: none; }
+}
+/* Tighter rows in the compact and dense tiers. */
+.dsh-context-track[data-tier="compact"] .dsh-context-track-row { min-height: 1.625rem; }
+.dsh-context-track[data-tier="narrow"] .dsh-context-track-row { min-height: 1.6rem; }
+.dsh-context-track[data-tier="dense"] .dsh-context-track-row { min-height: 1.5rem; }
+.dsh-context-track[data-tier="dense"] .dsh-context-track-label-text { font-size: 0.75rem; }
+.dsh-context-track[data-tier="dense"] .dsh-context-track-head-stat[data-head="elapsed"],
+.dsh-context-track[data-tier="dense"] .dsh-context-track-head-watching { display: none; }
+.dsh-context-track[data-tier="dense"] .dsh-context-track-head { padding: 0.2rem 0.5rem; gap: 0.35rem; }
+
+/* Narrow panels: the tree is full width and the detail is an overlay. */
+.dsh-context-track:not([data-tier="wide"]):not([data-tier="compact"]) .dsh-context-track-tree {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-inline-end: 0;
+}
+.dsh-context-track-detail[data-overlay="true"] {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  min-width: 0;
+  background: var(--dsw-alias-bg-base);
+  animation: dsh-context-track-slide-in 160ms ease-out;
+}
+@keyframes dsh-context-track-slide-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+/* Narrow panels expand the band downward as an overlay, never pushing the tree. */
+.dsh-context-track:not([data-tier="wide"]):not([data-tier="compact"]) .dsh-context-track-band[data-band="open"] .dsh-context-track-band-panel {
+  position: absolute;
+  top: 100%;
+  inset-inline: 0;
+  z-index: 5;
+  max-height: 60vh;
+  box-shadow: 0 10px 24px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* ---------- detail header ---------- */
+.dsh-context-track-detail-inner {
+  min-width: 0;
+}
+.dsh-context-track-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  min-height: 2rem;
+  margin: -0.1rem 0 0.55rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+.dsh-context-track-crumbs {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.dsh-context-track-crumb {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.dsh-context-track-crumb button {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track-crumb button:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.dsh-context-track-crumb-sep {
+  margin: 0 0.22rem;
+  color: var(--dsw-alias-label-tertiary);
+}
+.dsh-context-track [data-crumb-current] {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.dsh-context-track-detail-head .dsh-context-track-views {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.dsh-context-track-detail-head [data-copy-node],
+.dsh-context-track-detail-head [data-detail-close],
+.dsh-context-track-detail-head [data-detail-back] {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.dsh-context-track-detail-head [data-copy-node]:hover,
+.dsh-context-track-detail-head [data-detail-close]:hover,
+.dsh-context-track-detail-head [data-detail-back]:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-detail-body {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---------- detail reading ---------- */
+.dsh-context-track-card,
+.dsh-context-track-block {
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+.dsh-context-track-block {
+  margin: 0 0 0.55rem;
+  padding: 0.55rem 0.65rem 0.5rem;
+  border-radius: 0.5rem;
+}
+.dsh-context-track-block[data-category="system"] { border-inline-start: 3px solid var(--dsh-cat-system); }
+.dsh-context-track-block[data-category="user"] { border-inline-start: 3px solid var(--dsw-alias-label-secondary); }
+.dsh-context-track-block[data-category="injection"] { border-inline-start: 3px solid var(--dsh-cat-injection); }
+.dsh-context-track-block[data-category="skill"] { border-inline-start: 3px solid var(--dsh-cat-skill); }
+.dsh-context-track-block[data-category="tool-results"] { border-inline-start: 3px solid var(--dsh-cat-results); }
+.dsh-context-track-block[data-category="history"] { border-inline-start: 3px solid var(--dsh-cat-history); }
+.dsh-context-track-block[data-focus="true"] {
+  outline: 1px solid var(--dsw-alias-label-tertiary);
+  outline-offset: 1px;
+}
+.dsh-context-track-block h3,
+.dsh-context-track-section {
+  margin: 0 0 0.4rem;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+.dsh-context-track [data-facts] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 0.6rem 1.1rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0.5rem;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track [data-facts] [data-fact] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.18rem;
+  min-width: 0;
+}
+.dsh-context-track [data-facts] [data-fact="retry"] {
+  grid-column: 1 / -1;
+}
+.dsh-context-track-fact-label {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.66rem;
+  font-weight: 550;
+  line-height: 1.3;
+}
+.dsh-context-track-fact-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 0.8rem;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.dsh-context-track-fact-note {
+  padding: 0.02rem 0.38rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.64rem;
+  font-weight: 550;
+  line-height: 1.45;
+}
+.dsh-context-track [data-facts] [data-status="ok"] { color: var(--dsw-alias-state-success-primary); }
+.dsh-context-track [data-facts] [data-status="error"],
+.dsh-context-track [data-facts] [data-status="aborted"] { color: var(--dsw-alias-state-error-primary); }
+.dsh-context-track [data-facts] [data-status="running"] { color: var(--dsw-alias-label-tertiary); }
+.dsh-context-track-views {
+  display: inline-flex;
+  gap: 0.12rem;
+  padding: 0.12rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-context-track-views button {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-context-track-views button[aria-pressed="true"] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, monospace;
+}
+.dsh-context-track-badge {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.72rem;
+}
+.dsh-context-track-hero {
+  display: none;
+}
+
+/* ---------- category list (expanded band) ---------- */
 .dsh-context-track-cats {
   display: grid;
-  /* Shared tracks: the tools caret sits after its label and cannot push that row alone. */
   grid-template-columns: max-content minmax(0, 1fr) max-content;
-  column-gap: 0.5rem;
-  row-gap: 0.35rem;
-  margin: 0;
+  column-gap: 0.45rem;
+  row-gap: 0.3rem;
+  margin: 0.35rem 0 0;
   padding: 0;
   list-style: none;
   min-width: 0;
@@ -376,7 +879,7 @@ export const traceCss = `
   grid-template-columns: subgrid;
   align-items: center;
   min-width: 0;
-  row-gap: 0.25rem;
+  row-gap: 0.2rem;
 }
 .dsh-context-track-cat-line {
   display: grid;
@@ -384,9 +887,9 @@ export const traceCss = `
   grid-template-columns: subgrid;
   align-items: center;
   min-width: 0;
-  min-height: 1.35rem;
-  padding-block: 0.1rem;
-  border-radius: 0.35rem;
+  min-height: 1.25rem;
+  padding-block: 0.08rem;
+  border-radius: 0.3rem;
 }
 .dsh-context-track-cat-line[data-fold="true"] {
   cursor: pointer;
@@ -398,7 +901,7 @@ export const traceCss = `
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 0.28rem;
+  gap: 0.25rem;
   min-width: 0;
 }
 .dsh-context-track-cat-name > span:first-child {
@@ -412,8 +915,8 @@ export const traceCss = `
   box-sizing: border-box;
   flex: 0 0 auto;
   place-items: center;
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 1.05rem;
+  height: 1.05rem;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
@@ -431,8 +934,8 @@ export const traceCss = `
   outline-offset: 1px;
 }
 .dsh-context-track-cat-caret {
-  width: 0.7rem;
-  height: 0.7rem;
+  width: 0.65rem;
+  height: 0.65rem;
   transition: transform 160ms ease;
 }
 .dsh-context-track-cats > li[data-open="true"] .dsh-context-track-cat-caret {
@@ -443,12 +946,14 @@ export const traceCss = `
 }
 .dsh-context-track-cat {
   display: block;
-  height: 0.45rem;
-  background: var(--dsw-alias-bg-layer-2);
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
 }
 .dsh-context-track-cat i {
   display: block;
   height: 100%;
+  border-radius: inherit;
 }
 .dsh-context-track-cats [data-hue="tools"] i { background: var(--dsh-cat-tools); }
 .dsh-context-track-cats [data-hue="results"] i { background: var(--dsh-cat-results); }
@@ -460,19 +965,19 @@ export const traceCss = `
 .dsh-context-track-tools {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
   min-width: 0;
-  margin: 0.15rem 0 0.35rem;
+  margin: 0.1rem 0 0.3rem;
 }
 .dsh-context-track-cats li > .dsh-context-track-tools {
   grid-column: 1 / -1;
   box-sizing: border-box;
-  margin: 0.15rem 0 0.3rem 0.52rem;
-  padding: 0.3rem 0 0.15rem 0.65rem;
+  margin: 0.1rem 0 0.25rem 0.45rem;
+  padding: 0.25rem 0 0.1rem 0.55rem;
   border-left: 1px solid var(--dsw-alias-border-l2);
 }
 .dsh-context-track-cats > li[data-open="true"] {
-  row-gap: 0.35rem;
+  row-gap: 0.3rem;
 }
 .dsh-context-track-tools-head {
   display: flex;
@@ -483,32 +988,32 @@ export const traceCss = `
 .dsh-context-track-tools-head h3 {
   margin: 0;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 650;
 }
 .dsh-context-track-tools-count {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
 }
 .dsh-context-track-tools-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 .dsh-context-track-tools-bar input {
-  flex: 1 1 6.5rem;
+  flex: 1 1 6rem;
   min-width: 0;
   box-sizing: border-box;
   margin: 0;
-  padding: 0.22rem 0.55rem;
+  padding: 0.18rem 0.5rem;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 .dsh-context-track-tools-bar input::placeholder {
   color: var(--dsw-alias-label-tertiary);
@@ -520,15 +1025,15 @@ export const traceCss = `
 .dsh-context-track-tools-sort {
   display: inline-flex;
   flex: 0 0 auto;
-  padding: 0.1rem;
+  padding: 0.08rem;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
 }
 .dsh-context-track-tools-sort button {
-  padding: 0.08rem 0.45rem;
+  padding: 0.06rem 0.4rem;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--dsw-alias-label-secondary);
 }
 .dsh-context-track-tools-sort button[aria-pressed="true"] {
@@ -538,7 +1043,7 @@ export const traceCss = `
 .dsh-context-track-tool-chart {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.22rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -546,28 +1051,28 @@ export const traceCss = `
 .dsh-context-track-tool-chart li {
   display: grid;
   grid-template-columns: minmax(4.25rem, 7rem) minmax(2rem, 1fr) auto;
-  gap: 0.4rem;
+  gap: 0.35rem;
   align-items: center;
   min-width: 0;
 }
 .dsh-context-track-tool-name {
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dsh-context-track-tool-calls {
-  margin-left: 0.3rem;
+  margin-left: 0.25rem;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
 }
 .dsh-context-track-tool-meter {
   display: block;
-  height: 0.42rem;
+  height: 0.35rem;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--dsw-alias-bg-base);
 }
 .dsh-context-track-tool-meter i {
   display: block;
@@ -579,10 +1084,10 @@ export const traceCss = `
 .dsh-context-track-tools[data-hue="skill"] .dsh-context-track-tool-meter i { background: var(--dsh-cat-skill); }
 .dsh-context-track-tools button[data-remaining] {
   align-self: flex-start;
-  padding: 0.08rem 0.45rem;
+  padding: 0.06rem 0.4rem;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--dsw-alias-label-secondary);
 }
 .dsh-context-track-tools button[data-remaining]:hover {
@@ -592,43 +1097,51 @@ export const traceCss = `
 .dsh-context-track-tools-overhead {
   margin: 0;
   color: var(--dsw-alias-label-secondary);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 .dsh-context-track button.dsh-context-track-gap {
+  margin-top: 0.3rem;
+  padding: 0.06rem 0.4rem;
   background: transparent;
   border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 999px;
   color: var(--dsw-alias-label-secondary);
+  font-size: 0.7rem;
+}
+.dsh-context-track button.dsh-context-track-gap[data-active="true"] {
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
 }
 .dsh-context-track-output-meta {
   display: flex;
   align-items: baseline;
-  gap: 0.55rem;
-  margin-bottom: 0.35rem;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
 }
 .dsh-context-track-output-meta h3 {
   margin: 0;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 650;
 }
 .dsh-context-track-output-meta .dsh-context-track-num {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 .dsh-context-track-output-tokens {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.35rem;
+  gap: 0.3rem;
   color: var(--dsw-alias-label-secondary);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 .dsh-context-track-output-call {
-  margin-top: 0.7rem;
-  padding-top: 0.55rem;
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 .dsh-context-track-output-call-name {
-  margin: 0 0 0.25rem;
-  font-size: 0.78rem;
+  margin: 0 0 0.2rem;
+  font-size: 0.75rem;
   font-weight: 650;
 }
 .dsh-context-track-output-call [data-json-view] {
@@ -640,18 +1153,14 @@ export const traceCss = `
 .dsh-context-track-reasoning {
   color: var(--dsw-alias-label-tertiary);
 }
-.dsh-context-track-views button[aria-pressed="true"] {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
 .dsh-context-track-detail button[data-more],
 .dsh-context-track-detail button[data-open-json] {
-  margin-top: 0.45rem;
-  margin-inline-end: 0.35rem;
-  padding: 0.1rem 0.5rem;
+  margin-top: 0.35rem;
+  margin-inline-end: 0.3rem;
+  padding: 0.08rem 0.45rem;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--dsw-alias-label-secondary);
 }
 .dsh-context-track-detail button[data-more]:hover,
@@ -661,20 +1170,20 @@ export const traceCss = `
 }
 .dsh-context-track-meta {
   display: block;
-  margin: 0 0 0.55rem;
-  padding-bottom: 0.45rem;
+  margin: 0 0 0.45rem;
+  padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 .dsh-context-track-meta tbody {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.2rem 0.9rem;
+  gap: 0.15rem 0.8rem;
 }
 .dsh-context-track-meta tr {
   display: flex;
   align-items: baseline;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 .dsh-context-track-meta th,
 .dsh-context-track-meta td {
@@ -684,44 +1193,44 @@ export const traceCss = `
 }
 .dsh-context-track-meta th {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 550;
 }
 .dsh-context-track-meta td {
-  font-size: 0.8rem;
+  font-size: 0.77rem;
 }
 .dsh-context-track-prose {
-  line-height: 1.6;
-  font-size: 0.875rem;
+  line-height: 1.55;
+  font-size: 0.84rem;
 }
 .dsh-context-track-prose :is(h1, h2, h3, h4, p, ul, ol, blockquote, pre) {
-  margin: 0.4rem 0;
+  margin: 0.35rem 0;
 }
 .dsh-context-track-prose :is(h1, h2, h3, h4) {
   color: var(--dsw-alias-label-primary);
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 650;
   line-height: 1.35;
 }
 .dsh-context-track-prose :is(ul, ol) {
-  padding-inline-start: 1.15rem;
+  padding-inline-start: 1.1rem;
 }
 .dsh-context-track-prose li + li {
-  margin-top: 0.2rem;
+  margin-top: 0.18rem;
 }
 .dsh-context-track-prose blockquote {
-  padding-inline-start: 0.7rem;
+  padding-inline-start: 0.65rem;
   border-inline-start: 2px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
 }
 .dsh-context-track-prose pre {
-  padding: 0.45rem 0.6rem;
+  padding: 0.4rem 0.55rem;
   overflow-x: auto;
-  border-radius: 0.35rem;
+  border-radius: 0.3rem;
   background: var(--dsw-alias-bg-base);
 }
 .dsh-context-track-prose :not(pre) > code {
-  padding: 0.05rem 0.28rem;
+  padding: 0.04rem 0.25rem;
   border-radius: 0.2rem;
   background: var(--dsw-alias-bg-base);
 }
@@ -739,18 +1248,18 @@ export const traceCss = `
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin: 0 0 0.65rem;
-  padding: 0.25rem;
+  gap: 0.4rem;
+  margin: 0 0 0.55rem;
+  padding: 0.2rem;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
 }
 .dsh-context-track-json-tools button {
-  padding: 0.18rem 0.7rem;
+  padding: 0.15rem 0.6rem;
   border: 0;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--dsw-alias-label-secondary);
 }
 .dsh-context-track-json-tools button:hover {
@@ -764,7 +1273,7 @@ export const traceCss = `
 .dsh-context-track-json-bulk {
   display: inline-flex;
   gap: 0.1rem;
-  padding: 0.1rem;
+  padding: 0.08rem;
   border-radius: 999px;
   background: var(--dsw-alias-bg-base);
 }
@@ -775,6 +1284,13 @@ export const traceCss = `
 }
 .dsh-context-track-json-line {
   display: block;
+}
+.dsh-context-track-json-line > .dsh-context-track-chevron {
+  display: inline-grid;
+  width: 1ch;
+  height: auto;
+  min-height: 0;
+  vertical-align: baseline;
 }
 .dsh-context-track-json-nest {
   padding-inline-start: 2ch;
@@ -792,139 +1308,27 @@ export const traceCss = `
 .dsh-context-track-json-number { color: var(--dsh-json-number); }
 .dsh-context-track-json-boolean { color: var(--dsh-json-boolean); }
 .dsh-context-track-json-null { color: var(--dsh-json-boolean); font-style: italic; }
-.dsh-context-track-mark {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 0.75rem;
-}
-.dsh-context-track[data-layout="narrow"] {
-  flex-direction: column;
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-rail {
-  flex: 0 0 auto;
-  flex-direction: row;
-  min-width: 0;
-  min-height: 2.5rem;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-.dsh-context-track[data-layout="narrow"] button.dsh-context-track-turn {
-  flex: 0 0 auto;
-  width: auto;
-  max-width: 12rem;
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip {
-  cursor: row-resize;
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip::before {
-  inset-block: auto;
-  inset-inline: 0;
-  top: 50%;
-  left: 0;
-  width: auto;
-  height: 1px;
-  transform: translateY(-50%);
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip:hover::before,
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip:focus-visible::before,
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-grip[data-active="true"]::before {
-  width: auto;
-  height: 3px;
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-body {
-  flex-direction: column;
-  overflow: auto;
-  /* Narrow mode scrolls one shared column; a taller view must not shift it sideways. */
-  scrollbar-gutter: stable;
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-split {
-  flex: 0 0 auto;
-  flex-direction: column;
-  overflow: visible;
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-bill {
-  flex: 0 0 auto;
-  overflow: visible;
-  max-height: none;
-  min-width: 0;
-  padding: 0.35rem 0.5rem;
-}
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-tree,
-.dsh-context-track[data-layout="narrow"] .dsh-context-track-detail {
-  flex: 0 0 auto;
-  overflow: visible;
-}
-.dsh-context-track-detail {
-  display: flex;
-  flex-direction: column;
-  /* Collapsing flips flex-grow and flex-basis; transitioning both turns the jump into a slide. */
-  transition: flex-grow 180ms ease, flex-basis 180ms ease, padding 180ms ease;
-}
-.dsh-context-track-detail-body {
-  min-width: 0;
-  min-height: 0;
-}
-/* A fresh pane fades in instead of popping, so a swap never reads as a flicker. */
-.dsh-context-track-detail-body:not([hidden]),
-.dsh-context-track-detail [data-view-pane]:not([hidden]) {
-  animation: dsh-context-track-pane-in 150ms ease-out;
-}
-@keyframes dsh-context-track-pane-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .dsh-context-track-detail {
-    transition: none;
-  }
-  .dsh-context-track-detail-body:not([hidden]),
-  .dsh-context-track-detail [data-view-pane]:not([hidden]) {
-    animation: none;
-  }
-  .dsh-context-track-cat-caret {
-    transition: none;
-  }
-}
-.dsh-context-track-detail-toggle {
-  align-self: flex-end;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin: 0 0 0.45rem;
-  padding: 0.12rem 0.5rem;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  color: var(--dsw-alias-label-secondary);
-}
-.dsh-context-track-detail-toggle:hover {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-.dsh-context-track-detail[data-collapsed="true"] {
-  flex: 0 0 2.4rem;
-  align-items: center;
-  padding: 0.45rem 0.2rem;
-  overflow: hidden;
-}
-.dsh-context-track-detail[data-collapsed="true"] .dsh-context-track-detail-toggle {
-  align-self: center;
-  writing-mode: vertical-rl;
-  margin: 0;
-  padding: 0.55rem 0.15rem;
-}
-.dsh-context-track-lines {
-  margin: 0.25rem 0 0;
-  padding: 0;
-  list-style: none;
-}
 .dsh-context-track-facts {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.25rem 0.75rem;
+  gap: 0.2rem 0.7rem;
   margin: 0;
 }
 .dsh-context-track-facts dt {
   color: var(--dsw-alias-label-secondary);
+}
+
+/* Motion is short and always skippable. */
+.dsh-context-track-cat-caret,
+.dsh-context-track-row,
+.dsh-context-track button.dsh-context-track-turn {
+  transition-duration: 140ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dsh-context-track * {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 /*
  * Conversation tab: the chat composer is a sticky sibling of this full-height

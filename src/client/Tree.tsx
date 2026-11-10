@@ -15,6 +15,7 @@ import {
 } from '../shared/model.js'
 import type { EventKind } from '../shared/report.js'
 import { copyText, formatDuration } from './format.js'
+import { NodeGlyph, type NodeGlyphKind } from './Icon.js'
 import type { TrackKey } from './locales.js'
 import { FigureView } from './widgets.js'
 
@@ -49,14 +50,30 @@ export interface TreeProps {
   parentTurnId?: string
   /** Nesting depth. Indent applies only inside the label cluster. */
   depth?: number
+  /** Expand or collapse every row in this session tree. */
+  onBulk?: (expand: boolean, keys: readonly string[]) => void
 }
 
 /** Render one session's index, nesting a child session's own index under its tool. */
 export function Tree(props: TreeProps): ReactNode {
   const { track, t } = props
+  const depth = props.depth ?? 0
   if (track === undefined) return <p className="dsh-context-track-muted">{t('unavailable')}</p>
   return (
-    <div>
+    <div role={depth === 0 ? 'tree' : 'group'} aria-label={depth === 0 ? t('treeTitle') : undefined} data-tree={depth === 0 ? 'root' : undefined}>
+      {depth === 0 && props.onBulk !== undefined ? (
+        <div className="dsh-context-track-tree-bar" data-tree-bar>
+          <span className="dsh-context-track-tree-title">{t('treeTitle')}</span>
+          <span className="dsh-context-track-tree-actions">
+            <button type="button" data-bulk="expand" onClick={() => { props.onBulk?.(true, collectKeys(props.sessionId, track, props.trackOf)) }}>
+              {t('expandAll')}
+            </button>
+            <button type="button" data-bulk="collapse" onClick={() => { props.onBulk?.(false, collectKeys(props.sessionId, track, props.trackOf)) }}>
+              {t('collapseAll')}
+            </button>
+          </span>
+        </div>
+      ) : null}
       {track.root.map(node => (
         <RootRow key={`${props.sessionId}:${node.id}`} node={node} {...props} />
       ))}
@@ -76,17 +93,22 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
   const expanded = props.open[key] ?? defaultExpanded('turn', node.status)
   const origin = node.startTime
   const end = node.endTime ?? props.now
+  const steps = node.items.filter(item => item.kind === 'step').length
   const cursor: TreeCursor = {
     sessionId: props.sessionId, nodeId: node.id, key, kind: 'turn', status: node.status,
     expandable: node.items.length > 0, activateId: node.id,
   }
   return (
-    <div>
+    <div className="dsh-context-track-turn-block" data-turn-block={node.id}>
       <Row
+        kind="turn"
+        nodeId={node.id}
+        glyph="turn"
         label={props.t('turn').replace('{n}', String(node.turn))}
         status={node.status}
         expanded={expanded}
         canExpand={node.items.length > 0}
+        summary={steps > 0 ? props.t('summaryTurn').replace('{n}', String(steps)) : undefined}
         current={isCurrent(props, node.id)}
         duration={origin !== undefined && end !== undefined ? end - origin : undefined}
         depth={nest(props)}
@@ -95,7 +117,7 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
         onSelect={() => { activate(props, cursor) }}
       />
       {expanded ? (
-        <div className="dsh-context-track-children">
+        <div className="dsh-context-track-children" style={guideStyle(nest(props))}>
           {node.items.map(item => (
             <ItemRow key={item.id} item={item} origin={origin} {...props} depth={nest(props) + 1} parentTurnId={node.id} />
           ))}
@@ -128,14 +150,21 @@ function StepRow({
     sessionId: props.sessionId, nodeId: node.id, key, kind: 'step', status: node.status,
     expandable: canExpand, activateId: target, ...(latest !== undefined ? { attemptId: latest.id } : {}),
   }
+  const tools = node.tools.length + (node.searches?.length ?? 0)
   return (
     <div>
       <Row
+        kind="step"
+        nodeId={node.id}
+        glyph="step"
         label={props.t('step').replace('{n}', String(node.step))}
         secondary={node.model}
         status={node.status}
         expanded={expanded}
         canExpand={canExpand}
+        summary={canExpand ? props.t('summaryStep')
+          .replace('{calls}', String(node.attempts.length))
+          .replace('{tools}', String(tools)) : undefined}
         current={isCurrent(props, target) || isCurrent(props, node.id)}
         usage={node.usage}
         duration={start !== undefined && end !== undefined ? end - start : undefined}
@@ -145,7 +174,7 @@ function StepRow({
         onSelect={() => { activate(props, cursor) }}
       />
       {expanded ? (
-        <div className="dsh-context-track-children">
+        <div className="dsh-context-track-children" style={guideStyle(depth)}>
           {stepEntries(node).map(entry => {
             if (entry.kind === 'attempt') {
               if (!rowVisible('attempt', undefined, props.filter)) return null
@@ -171,6 +200,9 @@ function StepRow({
             return (
               <div key={tool.id}>
                 <Row
+                  kind="tool"
+                  nodeId={tool.id}
+                  glyph={tool.childSessionId !== undefined ? 'child' : 'tool'}
                   label={tool.name}
                   status={shown}
                   expanded={childOpen}
@@ -183,7 +215,7 @@ function StepRow({
                   onSelect={() => { activate(props, cursor) }}
                 />
                 {(tool.searches ?? []).some(search => rowVisible('sidecar', search.purpose, props.filter)) ? (
-                  <div className="dsh-context-track-children">
+                  <div className="dsh-context-track-children" style={guideStyle(depth + 1)}>
                     {(tool.searches ?? []).map(search => (
                       rowVisible('sidecar', search.purpose, props.filter)
                         ? <SidecarRow key={search.id} node={search} {...props} depth={depth + 2} />
@@ -192,7 +224,7 @@ function StepRow({
                   </div>
                 ) : null}
                 {childOpen && expandable && tool.childSessionId !== undefined ? (
-                  <div className="dsh-context-track-children">
+                  <div className="dsh-context-track-children" style={guideStyle(depth + 1)}>
                     <Tree {...props} sessionId={tool.childSessionId} track={childTrack} depth={depth + 2} />
                   </div>
                 ) : null}
@@ -217,6 +249,9 @@ function AttemptRow({
   }
   return (
     <Row
+      kind="attempt"
+      nodeId={attempt.id}
+      glyph="attempt"
       label={props.t('attempt').replace('{n}', String(attempt.attempt))}
       status={attempt.status}
       expanded={false}
@@ -255,6 +290,9 @@ function SidecarRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'sideca
   }
   return (
     <Row
+      kind="sidecar"
+      nodeId={props.node.id}
+      glyph="sidecar"
       label={label}
       status={props.node.status}
       expanded={false}
@@ -281,6 +319,9 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
   return (
     <div>
       <Row
+        kind="unlinked"
+        nodeId={props.node.id}
+        glyph="unlinked"
         label={props.node.childLabel ?? props.t('unlinked')}
         status="ok"
         expanded={expanded}
@@ -292,7 +333,7 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
         onSelect={() => { activate(props, cursor) }}
       />
       {expanded && expandable ? (
-        <div className="dsh-context-track-children">
+        <div className="dsh-context-track-children" style={guideStyle(nest(props))}>
           <Tree {...props} sessionId={props.node.childSessionId} track={childTrack} depth={nest(props) + 1} />
         </div>
       ) : null}
@@ -301,13 +342,17 @@ function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlin
 }
 
 function Row({
-  label, secondary, status, expanded, canExpand, current, usage, duration, depth, t, onToggle, onSelect,
+  kind, nodeId, glyph, label, secondary, status, expanded, canExpand, summary, current, usage, duration, depth, t, onToggle, onSelect,
 }: {
+  kind: TreeCursor['kind']
+  nodeId: string
+  glyph: NodeGlyphKind
   label: string
   secondary?: string
   status: NodeStatus
   expanded: boolean
   canExpand: boolean
+  summary?: string
   current: boolean
   usage?: TokenUsageScalars
   duration?: number
@@ -317,46 +362,55 @@ function Row({
   onSelect: () => void
 }): ReactNode {
   const bill = usage === undefined ? undefined : billOf(usage)
+  const tokenText = bill === undefined ? undefined : `${String(bill.input.value ?? '')} → ${String(bill.output.value ?? '')}`
+  const clockText = duration === undefined ? undefined : `${String(duration)} ms`
+  const tip = [label, secondary, clockText, tokenText].filter(part => part !== undefined && part.length > 0).join(' · ')
   return (
-    <div className="dsh-context-track-row" aria-current={current ? 'true' : undefined}>
-      <div
-        className="dsh-context-track-cluster"
-        data-depth={depth}
-        style={{ paddingInlineStart: `${depth * 0.75}rem` }}
-      >
-        {canExpand ? (
-          <button
-            type="button"
-            className="dsh-context-track-chevron"
-            aria-expanded={expanded}
-            aria-label={expanded ? t('collapse') : t('expand')}
-            onClick={onToggle}
-          >
-            <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-          </button>
-        ) : (
-          <span className="dsh-context-track-chevron" aria-hidden="true" />
-        )}
-        <span className={`dsh-context-track-dot dsh-context-track-status-${status}`} />
-        <button type="button" className="dsh-context-track-label" onClick={onSelect}>
-          <span>
-            {label}
-            {status === 'ok' ? null : (
-              <>
-                {' '}
-                <span className={`dsh-context-track-status-${status}`}>{t(status)}</span>
-              </>
-            )}
-          </span>
-          {secondary !== undefined && secondary.length > 0 ? (
-            <span className="dsh-context-track-muted">{secondary}</span>
-          ) : null}
+    <div
+      className="dsh-context-track-row"
+      data-row-kind={kind}
+      data-node-id={nodeId}
+      data-depth={depth}
+      data-status={status}
+      data-current={current ? 'true' : undefined}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-expanded={canExpand ? expanded : undefined}
+      aria-selected={current}
+      title={tip}
+    >
+      <span className="dsh-context-track-row-rail" aria-hidden="true" />
+      {canExpand ? (
+        <button
+          type="button"
+          className="dsh-context-track-chevron"
+          aria-expanded={expanded}
+          aria-label={expanded ? t('collapse') : t('expand')}
+          onClick={onToggle}
+        >
+          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
         </button>
-      </div>
-      <span data-column="duration">
+      ) : (
+        <span className="dsh-context-track-chevron" aria-hidden="true" />
+      )}
+      <span className="dsh-context-track-glyph" aria-hidden="true"><NodeGlyph kind={glyph} /></span>
+      <button type="button" className="dsh-context-track-label" onClick={onSelect}>
+        <span className={`dsh-context-track-dot dsh-context-track-status-${status}`} data-status={status} aria-hidden="true" />
+        <span className="dsh-context-track-label-text">{label}</span>
+        {secondary !== undefined && secondary.length > 0 ? (
+          <span className="dsh-context-track-muted dsh-context-track-label-extra">{secondary}</span>
+        ) : null}
+        {summary !== undefined && !expanded ? (
+          <span className="dsh-context-track-summary" data-summary>{summary}</span>
+        ) : null}
+        {status === 'ok' ? null : (
+          <span className={`dsh-context-track-status-${status} dsh-context-track-label-status`}>{t(status)}</span>
+        )}
+      </button>
+      <span data-column="duration" className="dsh-context-track-col">
         {duration !== undefined ? <DurationView ms={duration} /> : null}
       </span>
-      <span data-column="tokens">
+      <span data-column="tokens" className="dsh-context-track-col">
         {bill !== undefined ? (
           <span className="dsh-context-track-num">
             <FigureView figure={bill.input} t={t} showBasis={false} />
@@ -388,6 +442,11 @@ function DurationView({ ms }: { ms: number }): ReactNode {
   )
 }
 
+/** 12px per level, 6px past the sixth, so a deep subagent never loses its label. */
+function guideStyle(depth: number): { marginInlineStart: string } {
+  return { marginInlineStart: depth < 6 ? '12px' : '6px' }
+}
+
 function rowKey(sessionId: string, nodeId: string): string {
   return `${sessionId}:${nodeId}`
 }
@@ -410,6 +469,51 @@ function activate(props: TreeProps, cursor: TreeCursor): void {
 
 function nest(props: { depth?: number }): number {
   return props.depth ?? 0
+}
+
+/** Every expandable key in a session tree, whether or not it is open now. */
+export function collectKeys(
+  sessionId: string,
+  track: TrackState | undefined,
+  trackOf: (sessionId: string) => TrackState | undefined,
+): string[] {
+  const keys: string[] = []
+  if (track === undefined) return keys
+  const walk = (owner: string, state: TrackState | undefined) => {
+    if (state === undefined) return
+    for (const node of state.root) {
+      if (node.kind === 'turn') {
+        keys.push(rowKey(owner, node.id))
+        for (const item of node.items) walkItem(owner, item)
+        continue
+      }
+      if (node.kind === 'unlinked') {
+        keys.push(rowKey(owner, node.id))
+        if (childExpandable(node.childMode)) walk(node.childSessionId, trackOf(node.childSessionId))
+        continue
+      }
+    }
+  }
+  const walkItem = (owner: string, item: TurnItem) => {
+    if (item.kind === 'step') {
+      keys.push(rowKey(owner, item.id))
+      if (item.tools.length > 0) {
+        for (const tool of item.tools) {
+          if (tool.childSessionId !== undefined && childExpandable(tool.childMode)) {
+            keys.push(rowKey(owner, tool.id))
+            walk(tool.childSessionId, trackOf(tool.childSessionId))
+          }
+        }
+      }
+      return
+    }
+    if (item.kind === 'unlinked') {
+      keys.push(rowKey(owner, item.id))
+      if (childExpandable(item.childMode)) walk(item.childSessionId, trackOf(item.childSessionId))
+    }
+  }
+  walk(sessionId, trackOf(sessionId) ?? track)
+  return keys
 }
 
 /** Attempts, tools, and step-level searches in log order. Tool-owned searches stay on the tool. */

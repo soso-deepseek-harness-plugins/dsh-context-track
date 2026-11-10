@@ -35,17 +35,37 @@ function mount(props: TracePageProps): { host: HTMLDivElement; root: Root } {
   return { host, root }
 }
 
-function buttons(host: ParentNode, label: string): HTMLButtonElement[] {
-  return [...host.querySelectorAll('button')].filter(button =>
-    button.textContent?.includes(label) === true || button.getAttribute('aria-label')?.includes(label) === true,
-  )
+function panel(host: ParentNode): HTMLElement {
+  return host.querySelector('[data-tier]') as HTMLElement
 }
 
-async function click(button: HTMLButtonElement | undefined): Promise<void> {
+function row(host: ParentNode, nodeId: string): HTMLElement | null {
+  return host.querySelector(`[data-row-kind][data-node-id="${nodeId}"]`)
+}
+
+function label(host: ParentNode, nodeId: string): HTMLButtonElement | null {
+  return row(host, nodeId)?.querySelector('.dsh-context-track-label') ?? null
+}
+
+function chevron(host: ParentNode, nodeId: string): HTMLButtonElement | null {
+  return row(host, nodeId)?.querySelector('button[aria-expanded]') ?? null
+}
+
+function buttons(host: ParentNode, selector: string): HTMLButtonElement[] {
+  return [...host.querySelectorAll<HTMLButtonElement>(selector)]
+}
+
+async function click(button: HTMLButtonElement | null | undefined): Promise<void> {
   await act(async () => {
     button?.click()
     await Promise.resolve()
   })
+}
+
+/** Open a row without depending on its default expansion. */
+async function open(host: ParentNode, nodeId: string): Promise<void> {
+  const control = chevron(host, nodeId)
+  if (control !== null && control.getAttribute('aria-expanded') === 'false') await click(control)
 }
 
 const finishedTurn: TrackState = {
@@ -115,8 +135,9 @@ describe('trace panel', () => {
       getNode,
     } as unknown as Parameters<typeof TraceMain>[0]
     act(() => { root.render(<TraceMain {...props} />) })
-    expect(host.textContent).toContain('轮次 1')
+    expect(host.textContent).toContain('turn 1')
     expect(host.querySelector('.dsh-context-track-main')).not.toBeNull()
+    expect(panel(host)).not.toBeNull()
 
     list.byId.sess = { id: 'sess', retainedBy: {} }
     act(() => { root.render(<TraceMain {...props} />) })
@@ -149,11 +170,11 @@ describe('trace panel', () => {
     document.head.appendChild(userAgent)
     const view = mount(page(session(finishedTurn), vi.fn()))
     roots.push(view.root)
-    const panel = view.host.querySelector('.dsh-context-track') as HTMLElement
-    panel.style.setProperty('--dsw-alias-label-primary', 'rgb(240, 240, 240)')
-    const label = buttons(view.host, '轮次 1')[0]
-    expect(label).toBeDefined()
-    expect(getComputedStyle(label!).color).toBe('rgb(240, 240, 240)')
+    const shell = panel(view.host)
+    shell.style.setProperty('--dsw-alias-label-primary', 'rgb(240, 240, 240)')
+    const turnLabel = label(view.host, 'turn:1')
+    expect(turnLabel).not.toBeNull()
+    expect(getComputedStyle(turnLabel!).color).toBe('rgb(240, 240, 240)')
   })
 
   it('hides a finished turn’s children without writing the projection', async () => {
@@ -162,9 +183,9 @@ describe('trace panel', () => {
     const view = mount(page(session(track), getNode))
     roots.push(view.root)
     expect(view.host.textContent).not.toContain('step 1')
-    await click(buttons(view.host, zh.expand)[0])
+    await click(chevron(view.host, 'turn:1'))
     expect(view.host.textContent).toContain('step 1')
-    await click(buttons(view.host, zh.collapse)[0])
+    await click(chevron(view.host, 'turn:1'))
     expect(view.host.textContent).not.toContain('step 1')
     expect(track).toEqual(finishedTurn)
   })
@@ -175,8 +196,9 @@ describe('trace panel', () => {
     list.projectionsBySession['child-1'] = { values: { track: childTrack } }
     const view = mount(page(list, getNode))
     roots.push(view.root)
-    await click(buttons(view.host, zh.expand).find(button => button.parentElement?.textContent?.includes('step')))
-    await click(buttons(view.host, zh.expand).find(button => button.parentElement?.textContent?.includes('spawn')))
+    await open(view.host, 'turn:1')
+    await open(view.host, 'step:1:1')
+    await open(view.host, 'tool:2')
     expect(view.host.textContent).toContain('turn 7')
     expect(view.host.textContent).not.toContain(zh.unavailable)
   })
@@ -187,10 +209,11 @@ describe('trace panel', () => {
     })
     const view = mount(page(session(finishedTurn), getNode))
     roots.push(view.root)
-    await click(buttons(view.host, '轮次 1')[0])
-    expect(view.host.textContent).toContain('轮次 1')
+    await click(chevron(view.host, 'turn:1'))
+    await click(label(view.host, 'step:1:1'))
+    expect(view.host.textContent).toContain('turn 1')
     expect(view.host.textContent).toContain(zh.missing)
-    expect(view.host.querySelector('.dsh-context-track-tree')).not.toBeNull()
+    expect(panel(view.host).querySelector('[data-pane="tree"]')).not.toBeNull()
   })
 
   it('hides the chat composer on this tab and keeps an approval, question, or plan card', () => {
@@ -219,7 +242,7 @@ describe('trace panel', () => {
     expect(getComputedStyle(seat).display).toBe('none')
   })
 
-  it('scrolls the detail pane when the node body is taller than the panel', async () => {
+  it('scrolls the detail pane independently of the tree', async () => {
     const attempt: NodeDetail = {
       kind: 'attempt', status: 'ok', inputSeq: 3,
       messages: [{ text: `${'line\n'.repeat(80)}tail-marker` }],
@@ -228,20 +251,20 @@ describe('trace panel', () => {
     const view = mount(page(session(finishedTurn), vi.fn(async () => ({ ok: true as const, value: attempt }))))
     roots.push(view.root)
     view.host.style.cssText = 'display:flex;flex-direction:column;height:160px;overflow:hidden;'
-    await click(buttons(view.host, zh.expand)[0])
-    await click(buttons(view.host, 'step 1')[0])
+    await click(chevron(view.host, 'turn:1'))
+    await click(label(view.host, 'step:1:1'))
     await act(async () => { await Promise.resolve() })
     expect(view.host.textContent).not.toContain('tail-marker')
     await click(view.host.querySelector('[data-more]') as HTMLButtonElement)
-    const detail = view.host.querySelector('.dsh-context-track-detail') as HTMLElement
-    const tree = view.host.querySelector('.dsh-context-track-tree') as HTMLElement
-    const track = view.host.querySelector('.dsh-context-track') as HTMLElement
+    const detail = view.host.querySelector('[data-pane="detail"]') as HTMLElement
+    const tree = view.host.querySelector('[data-pane="tree"]') as HTMLElement
+    const track = panel(view.host)
     expect(getComputedStyle(track).minHeight).not.toBe('auto')
     expect(getComputedStyle(detail).minHeight).not.toBe('auto')
     expect(getComputedStyle(tree).minHeight).not.toBe('auto')
     expect(traceCss).toMatch(/\.dsh-context-track \{[^}]*overflow:\s*hidden/)
     expect(traceCss).toMatch(/\.dsh-context-track-detail \{[^}]*overflow:\s*auto/)
-    expect(view.host.textContent).toContain('轮次 1')
+    expect(view.host.textContent).toContain('turn 1')
     expect(view.host.textContent).toContain('tail-marker')
     tree.scrollTop = 15
     detail.scrollTop = 40
@@ -259,13 +282,12 @@ describe('trace panel', () => {
     const list = session(finishedTurn)
     const view = mount(page(list, getNode))
     roots.push(view.root)
-    await click(buttons(view.host, zh.expand)[0])
-    await click(buttons(view.host, 'step 1')[0])
+    await click(chevron(view.host, 'turn:1'))
+    await click(label(view.host, 'step:1:1'))
     await act(async () => { await Promise.resolve() })
     expect(getNode).toHaveBeenCalledWith('sess', 'attempt:1:1:1')
     expect(view.host.textContent).toContain('seen-input')
     expect(view.host.textContent).toContain('seen-output')
-    expect(buttons(view.host, '概览')).toHaveLength(0)
     const calls = getNode.mock.calls.length
     act(() => { view.root.render(<TracePage {...page(list, getNode)} />) })
     await act(async () => { await Promise.resolve() })
@@ -278,7 +300,7 @@ describe('trace panel', () => {
     const live = vi.fn(async () => ({ ok: true as const, value: running }))
     const liveView = mount(page(session(runningStep), live))
     roots.push(liveView.root)
-    await click(buttons(liveView.host, 'step 1')[0])
+    await click(label(liveView.host, 'step:1:1'))
     await act(async () => { await Promise.resolve() })
     expect(live).toHaveBeenCalledWith('sess', 'step:1:1')
     expect(liveView.host.textContent).toContain('live-prefix')
@@ -301,7 +323,7 @@ describe('trace panel', () => {
     const getNode = vi.fn(async () => ({ ok: true as const, value }))
     const view = mount(page(session(runningStep), getNode))
     roots.push(view.root)
-    await click(buttons(view.host, 'step 1')[0])
+    await click(label(view.host, 'step:1:1'))
     await act(async () => { await Promise.resolve() })
     expect(view.host.querySelector('[data-output="unseen"]')?.textContent).toContain(zh.notSeen)
     await click(view.host.querySelector('[data-view-toggle="json"]') as HTMLButtonElement)
@@ -340,15 +362,15 @@ describe('trace panel', () => {
     const list = session(track)
     const view = mount(page(list, getNode))
     roots.push(view.root)
-    await click(buttons(view.host, 'step 1')[0])
+    await click(label(view.host, 'step:1:1'))
     await act(async () => { await Promise.resolve() })
     await click(view.host.querySelector('[data-view-toggle="json"]') as HTMLButtonElement)
     expect(view.host.querySelector('[data-output="unseen"]')?.textContent).toContain(zh.notSeen)
     expect(view.host.querySelector('[data-json-part="output"]')?.textContent).toContain('running')
 
-    const step = track.root[0]
-    if (step?.kind !== 'turn') throw new Error('missing turn')
-    const item = step.items[0]
+    const turn = track.root[0]
+    if (turn?.kind !== 'turn') throw new Error('missing turn')
+    const item = turn.items[0]
     if (item?.kind !== 'step') throw new Error('missing step')
     item.status = 'ok'
     item.attempts = [{ id: 'attempt:1:1:1', attempt: 1, inputSeq: 3, outputSeq: 3, status: 'ok' }]
