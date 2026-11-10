@@ -27,6 +27,10 @@ export const traceCss = `
   --dsh-cat-history: light-dark(#a16207, #facc15);
   --dsh-cat-injection: light-dark(#92400e, #d6a06a);
   --dsh-cat-neutral: var(--dsw-alias-label-tertiary);
+  /* hit rate reads high-good, so the tones are their own scale, not category hues */
+  --dsh-hit-high: light-dark(#15803d, #4ade80);
+  --dsh-hit-mid: light-dark(#a16207, #facc15);
+  --dsh-hit-low: light-dark(#b91c1c, #f87171);
   --dsh-json-key: light-dark(#0451a5, #9cdcfe);
   --dsh-json-string: light-dark(#a31515, #ce9178);
   --dsh-json-number: light-dark(#098658, #b5cea8);
@@ -73,7 +77,9 @@ export const traceCss = `
   min-height: 2.5rem;
   padding: 0.25rem 0.75rem;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  overflow: hidden;
+  /* The More menu is an absolutely positioned child, so this box must not clip it. */
+  position: relative;
+  z-index: 7;
 }
 .dsh-context-track-head-title {
   flex: 0 0 auto;
@@ -108,9 +114,44 @@ export const traceCss = `
   color: var(--dsw-alias-label-tertiary);
   font-size: 0.68rem;
 }
-.dsh-context-track-head-band,
-.dsh-context-track-more > summary {
+/* Cache hit rate: a tinted pill so the percentage is the first figure the eye lands on. */
+.dsh-context-track-hit {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.06rem 0.45rem;
+  border: 1px solid color-mix(in srgb, currentColor 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.dsh-context-track-hit-label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.66rem;
+}
+.dsh-context-track-hit-value {
+  color: inherit;
+  font-family: ui-monospace, monospace;
+  font-size: 0.76rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dsh-context-track-hit[data-hit-tone="high"] { color: var(--dsh-hit-high); }
+.dsh-context-track-hit[data-hit-tone="mid"] { color: var(--dsh-hit-mid); }
+.dsh-context-track-hit[data-hit-tone="low"] { color: var(--dsh-hit-low); }
+.dsh-context-track-hit[data-hit-tone="absent"] {
+  color: var(--dsw-alias-label-tertiary);
+  border-color: var(--dsw-alias-border-l2);
+  background: transparent;
+}
+.dsh-context-track-head-band,
+.dsh-context-track-more-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.22rem;
   padding: 0.1rem 0.5rem;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
@@ -118,13 +159,21 @@ export const traceCss = `
   font-size: 0.72rem;
   white-space: nowrap;
   cursor: pointer;
-  list-style: none;
 }
-.dsh-context-track-more > summary::-webkit-details-marker { display: none; }
 .dsh-context-track-head-band:hover,
-.dsh-context-track-more > summary:hover {
+.dsh-context-track-more-button:hover,
+.dsh-context-track-more-button[aria-expanded="true"] {
   color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-more-caret {
+  font-size: 0.58rem;
+  line-height: 1;
+  transition: transform 140ms ease;
+}
+.dsh-context-track-more-button[aria-expanded="true"] .dsh-context-track-more-caret {
+  transform: rotate(180deg);
 }
 .dsh-context-track-more {
   position: relative;
@@ -132,27 +181,42 @@ export const traceCss = `
 }
 .dsh-context-track-more-menu {
   position: absolute;
-  top: calc(100% + 0.25rem);
+  /* Clear the header's bottom border, not just the trigger's box. */
+  top: calc(100% + 0.6rem);
   right: 0;
-  z-index: 20;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  min-width: 9rem;
+  min-width: 10rem;
   padding: 0.3rem;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 0.5rem;
+  border-radius: 0.55rem;
   background: var(--dsw-alias-bg-layer-2);
-  box-shadow: 0 6px 18px color-mix(in srgb, currentColor 16%, transparent);
+  box-shadow: 0 10px 26px color-mix(in srgb, currentColor 20%, transparent);
+  animation: dsh-context-track-menu-in 120ms ease-out;
 }
 .dsh-context-track-more-menu button {
-  padding: 0.22rem 0.45rem;
+  padding: 0.32rem 0.55rem;
   border-radius: 0.35rem;
+  color: var(--dsw-alias-label-primary);
   font-size: 0.75rem;
   text-align: start;
+  white-space: nowrap;
 }
-.dsh-context-track-more-menu button:hover {
+.dsh-context-track-more-menu button:hover,
+.dsh-context-track-more-menu button:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-more-divider {
+  display: block;
+  height: 1px;
+  margin: 0.15rem 0.2rem;
+  background: var(--dsw-alias-border-l2);
+}
+@keyframes dsh-context-track-menu-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ---------- round strip ---------- */
@@ -417,6 +481,147 @@ export const traceCss = `
 .dsh-context-track-band-figures span {
   white-space: nowrap;
 }
+.dsh-context-track-band-block > .dsh-context-track-band-figures:first-child {
+  margin-top: 0;
+}
+
+/* ---------- timing card ---------- */
+.dsh-context-track-timing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.dsh-context-track-timing-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+}
+.dsh-context-track-timing-bar span {
+  display: block;
+  flex-basis: 0;
+  min-width: 2px;
+  height: 100%;
+  border-radius: 999px;
+}
+.dsh-context-track-timing-bar [data-time-seg="wait"] { background: var(--dsh-cat-history); }
+.dsh-context-track-timing-bar [data-time-seg="think"] { background: var(--dsh-cat-system); }
+.dsh-context-track-timing-bar [data-time-seg="rest"] {
+  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 32%, transparent);
+}
+.dsh-context-track-timing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.25rem), 1fr));
+  gap: 0.4rem;
+  min-width: 0;
+}
+.dsh-context-track-timing-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0.45rem;
+  background: var(--dsw-alias-bg-base);
+}
+.dsh-context-track-timing-label {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+.dsh-context-track-timing-value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.28rem;
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.dsh-context-track-timing-value .dsh-context-track-muted {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.dsh-context-track-timing-note {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.66rem;
+  font-weight: 500;
+}
+.dsh-context-track-timing-later {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+}
+.dsh-context-track-timing-later-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.dsh-context-track-timing-later-row .dsh-context-track-timing-label { font-size: 0.7rem; }
+.dsh-context-track-timing-later-row .dsh-context-track-timing-value { font-size: 0.8rem; }
+
+/* ---------- sidecar card ---------- */
+.dsh-context-track-side-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 0;
+}
+.dsh-context-track-side-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.74rem;
+}
+.dsh-context-track-side-group + .dsh-context-track-side-row,
+.dsh-context-track-side-row + .dsh-context-track-side-row {
+  margin-top: 0.32rem;
+}
+.dsh-context-track-side-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-context-track-side-value {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+.dsh-context-track-side-note {
+  margin: 0.1rem 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.66rem;
+}
+.dsh-context-track-side-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.dsh-context-track-side-empty {
+  margin: 0;
+  padding: 0.55rem 0.6rem;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 0.45rem;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
 @keyframes dsh-context-track-band-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -666,6 +871,8 @@ export const traceCss = `
 .dsh-context-track[data-tier="dense"] .dsh-context-track-label-text { font-size: 0.75rem; }
 .dsh-context-track[data-tier="dense"] .dsh-context-track-head-stat[data-head="elapsed"],
 .dsh-context-track[data-tier="dense"] .dsh-context-track-head-watching { display: none; }
+/* Narrow headers keep the colored number but drop its label so the chrome still fits. */
+.dsh-context-track:not([data-tier="wide"]):not([data-tier="compact"]) .dsh-context-track-head .dsh-context-track-hit-label { display: none; }
 .dsh-context-track[data-tier="dense"] .dsh-context-track-head { padding: 0.2rem 0.5rem; gap: 0.35rem; }
 
 /* Narrow panels: the tree is full width and the detail is an overlay. */

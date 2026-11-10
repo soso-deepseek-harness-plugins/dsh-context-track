@@ -273,6 +273,9 @@ describe('trace console', () => {
     expect(total?.textContent).not.toContain('143')
     expect(view.host.querySelector('[data-head="elapsed"]')?.textContent).toContain('3.2 s')
     expect(view.host.querySelector('[data-head="total"] [data-basis="usage"]')).not.toBeNull()
+    const headHit = view.host.querySelector('[data-head="hit"]')
+    expect(headHit?.textContent).toContain('66.66%')
+    expect(headHit?.querySelector('.dsh-context-track-hit')?.getAttribute('data-hit-tone')).toBe('mid')
     await expandBand(view.host)
     const compose = view.host.querySelector('[data-block="compose"]')
     expect(compose?.querySelector('[data-stat="input"]')?.textContent).toContain('3')
@@ -280,6 +283,7 @@ describe('trace console', () => {
     expect(compose?.querySelector('[data-stat="reasoning"]')?.textContent).toContain('40')
     expect(compose?.querySelector('[data-stat="hit"]')?.textContent).toContain('66.66%')
     expect(compose?.querySelector('[data-stat="hit"]')?.getAttribute('title')).toBe(zh.hitHint)
+    expect(compose?.querySelector('[data-stat="hit"]')?.getAttribute('data-hit-tone')).toBe('mid')
     expect(compose?.querySelector('[data-stat] .dsh-context-track-badge')).toBeNull()
     expect(view.host.querySelector('[data-block="timing"]')?.textContent).toContain(zh.elapsed)
     expect(view.host.querySelector('[data-block="timing"]')?.textContent).toContain('800')
@@ -631,9 +635,61 @@ describe('trace console', () => {
     expect(band.getAttribute('data-band')).toBe('open')
     expect(view.host.querySelector('[data-band-panel]')).not.toBeNull()
     expect(view.host.querySelector('[data-block="compose"]')).not.toBeNull()
+    expect(view.host.querySelectorAll('[data-compose-bar]')).toHaveLength(1)
+    expect(view.host.querySelector('[data-block="compose"] > h3')).toBeNull()
     expect(view.host.querySelector('[data-block="timing"]')).not.toBeNull()
     expect(view.host.querySelector('[data-block="side"]')).not.toBeNull()
     expect(view.host.querySelector('[data-band-toggle]')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('opens the header more menu, runs an action, and closes it with Escape', async () => {
+    const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+    const more = view.host.querySelector('[data-more-menu]') as HTMLElement
+    const trigger = more.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(more.querySelector('[role="menu"]')).toBeNull()
+    await click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const items = [...more.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    expect(items.map(item => item.textContent)).toEqual([zh.expandAll, zh.collapseAll, zh.resetSplit])
+    await click(items[0])
+    expect(more.querySelector('[role="menu"]')).toBeNull()
+    expect(treePane(view.host).textContent).toContain('step 1')
+    await click(trigger)
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+    expect(more.querySelector('[role="menu"]')).toBeNull()
+  })
+
+  it('lays out the timing card as labelled cells with a wait and think bar', async () => {
+    const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+    await expandBand(view.host)
+    const timing = view.host.querySelector('[data-block="timing"] [data-card="timing"]') as HTMLElement
+    expect(timing.querySelector('[data-time="elapsed"]')?.textContent).toContain(zh.elapsed)
+    expect(timing.querySelector('[data-time="elapsed"]')?.textContent).toContain('3.2 s')
+    expect(timing.querySelector('[data-time="wait"]')?.textContent).toContain('900 ms')
+    expect(timing.querySelector('[data-time="think"]')?.textContent).toContain('400 ms')
+    expect(timing.querySelector('[data-time="first"]')?.textContent).toContain('800 ms')
+    expect(timing.querySelectorAll('[data-time-bar] > [data-time-seg]')).toHaveLength(3)
+    expect(timing.querySelector('[data-time-seg="think"]')?.getAttribute('style')).toContain('flex-grow: 400')
+  })
+
+  it('explains an empty sidecar card instead of leaving it blank', async () => {
+    const report = bill()
+    report.consumption.compaction = { basis: 'absent' }
+    report.events = report.events.filter(event => event.kind !== 'compaction')
+    report.subagents = []
+    const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: report }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+    await expandBand(view.host)
+    const side = view.host.querySelector('[data-block="side"]') as HTMLElement
+    expect(side.querySelector('[data-compaction]')).toBeNull()
+    expect(side.querySelector('[data-side-empty]')?.textContent).toBe(zh.sideEmpty)
+    expect(side.textContent).not.toContain(zh.title)
   })
 
   it('jumps from a band category to the matching input card', async () => {

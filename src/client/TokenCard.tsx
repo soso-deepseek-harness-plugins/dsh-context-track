@@ -5,13 +5,13 @@
  */
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import type { CategoryId } from '../shared/classify.js'
-import { formatHitPercent, sessionUsage, type Figure } from '../shared/figures.js'
+import { sessionUsage, type Figure } from '../shared/figures.js'
 import type { TrackState } from '../shared/model.js'
 import type { CategoryTotal, ContextEvent, TurnReport } from '../shared/report.js'
 import type { TrackKey } from './locales.js'
 import { TimingCard } from './TimingCard.js'
 import { abbreviate } from './format.js'
-import { CATEGORY_KEY, FigureView } from './widgets.js'
+import { CATEGORY_KEY, FigureView, HitRateBadge } from './widgets.js'
 import { ToolList, type ToolListCategory } from './Inspector.js'
 
 /** Identity, not rank. A seventh category keeps its name and a neutral bar. */
@@ -88,7 +88,6 @@ export function ContextBand({
   const toggleDetail = (id: ToolListCategory) => { setDetailOpen(current => ({ ...current, [id]: current[id] !== true })) }
   const reclaimed = reclaimedOf(report.events)
   const gaps = report.events.filter(event => event.kind === 'compaction' && event.inWindow)
-  const hitText = (value: number) => ({ text: formatHitPercent(value), full: formatHitPercent(value), abbreviated: false })
   return (
     <div className="dsh-context-track-band" data-band={open ? 'open' : 'closed'}>
       <div className="dsh-context-track-band-line">
@@ -114,16 +113,16 @@ export function ContextBand({
       </div>
       {open ? (
         <div className="dsh-context-track-band-panel" data-band-panel>
-          <section data-block="compose" className="dsh-context-track-band-block">
-            <h3>{t('blockCompose')}</h3>
-            <StackedBar ranked={ranked} gaps={gaps} activeSeq={activeSeq} t={t} onCategory={onCategory} onGap={onGap} />
+          {/* The line above already labels the compose card with its bar and legend, so
+              the panel keeps only the figures and the per-category rows. */}
+          <section data-block="compose" className="dsh-context-track-band-block" aria-label={t('blockCompose')}>
             <p className="dsh-context-track-band-figures" data-figures>
               <span data-stat="input">{t('input')} <FigureView figure={consumption.input} t={t} showBasis={false} /></span>
               <span data-stat="output">{t('output')} <FigureView figure={consumption.output} t={t} showBasis={false} pending={report.outputPending} /></span>
               {consumption.reasoning.basis === 'absent' ? null : (
                 <span data-stat="reasoning">{t('reasoningBlock')} <FigureView figure={consumption.reasoning} t={t} showBasis={false} /></span>
               )}
-              <span data-stat="hit" title={t('hitHint')}>{t('hitRate')} <FigureView figure={consumption.hitRate} t={t} showBasis={false} format={hitText} /></span>
+              <HitRateBadge figure={consumption.hitRate} t={t} stat="hit" />
             </p>
             <ol className="dsh-context-track-cats" data-compose>
               {ranked.map(category => {
@@ -188,39 +187,52 @@ export function ContextBand({
           </section>
           <section data-block="side" className="dsh-context-track-band-block">
             <h3>{t('blockSide')}</h3>
+            {!compactionPresent(report) && report.subagents.length === 0 ? (
+              <p className="dsh-context-track-side-empty" data-side-empty>{t('sideEmpty')}</p>
+            ) : null}
             {compactionPresent(report) ? (
-              <div data-compaction>
-                <p>
-                  {t('reclaimed')}{' '}
-                  <FigureView figure={reclaimed ?? { basis: 'absent' }} t={t} />
-                </p>
-                <p>
-                  {t('compactionCost')}{' '}
-                  <FigureView figure={consumption.compaction} t={t} />
-                </p>
-                {consumption.compaction.basis !== 'absent' ? <p className="dsh-context-track-muted">{t('compactionIncluded')}</p> : null}
-                {report.events.filter(event => event.kind === 'compaction').map(event => (
-                  <button
-                    key={event.seq}
-                    type="button"
-                    className="dsh-context-track-gap"
-                    data-seq={event.seq}
-                    data-active={activeSeq === event.seq ? 'true' : undefined}
-                    onClick={() => { onGap(event.seq) }}
-                  >
-                    {t('kindCompaction')}
-                  </button>
-                ))}
+              <div className="dsh-context-track-side-group" data-compaction>
+                <div className="dsh-context-track-side-row">
+                  <span className="dsh-context-track-side-label">{t('reclaimed')}</span>
+                  <span className="dsh-context-track-side-value">
+                    <FigureView figure={reclaimed ?? { basis: 'absent' }} t={t} />
+                  </span>
+                </div>
+                <div className="dsh-context-track-side-row">
+                  <span className="dsh-context-track-side-label">{t('compactionCost')}</span>
+                  <span className="dsh-context-track-side-value">
+                    <FigureView figure={consumption.compaction} t={t} />
+                  </span>
+                </div>
+                {consumption.compaction.basis !== 'absent' ? <p className="dsh-context-track-side-note">{t('compactionIncluded')}</p> : null}
+                <div className="dsh-context-track-side-links">
+                  {report.events.filter(event => event.kind === 'compaction').map(event => (
+                    <button
+                      key={event.seq}
+                      type="button"
+                      className="dsh-context-track-gap"
+                      data-seq={event.seq}
+                      data-active={activeSeq === event.seq ? 'true' : undefined}
+                      onClick={() => { onGap(event.seq) }}
+                    >
+                      {t('kindCompaction')}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
             {report.subagents.map(child => {
               const track = trackOf(child.sessionId)
               const usage = sessionUsage(track?.root ?? [])
               return (
-                <p key={child.sessionId} data-subagent={child.sessionId}>
-                  {t('subagentLine')} {child.label ?? child.sessionId}{' '}
-                  <FigureView figure={usage} t={t} showBasis={false} />
-                </p>
+                <div key={child.sessionId} className="dsh-context-track-side-row" data-subagent={child.sessionId}>
+                  <span className="dsh-context-track-side-label">
+                    {t('subagentLine')} {child.label ?? child.sessionId}
+                  </span>
+                  <span className="dsh-context-track-side-value">
+                    <FigureView figure={usage} t={t} showBasis={false} />
+                  </span>
+                </div>
               )
             })}
           </section>

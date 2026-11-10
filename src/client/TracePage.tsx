@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { CategoryId } from '../shared/classify.js'
 import { isMissing, type MissingDetail, type NodeDetail } from '../shared/detail.js'
-import { usageFigure, type Figure } from '../shared/figures.js'
+import { cacheHitRate, usageFigure, type Figure } from '../shared/figures.js'
 import {
   defaultExpanded,
   emptyTrack,
@@ -42,7 +42,7 @@ import { ensureStyles } from './styles.js'
 import './slots.js'
 import { compactionPresent, ContextBand, reclaimedOf } from './TokenCard.js'
 import { Tree, collectKeys, visibleTargets, type TreeCursor } from './Tree.js'
-import { FigureView } from './widgets.js'
+import { FigureView, HitRateBadge } from './widgets.js'
 
 export interface TrackInject {
   getNode(sessionId: string, nodeId: string): Promise<RemoteResult<NodeDetail>>
@@ -326,6 +326,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const showDetail = sideBySide ? detailOpen : overlayOpen && hasSelection
   const headTotal = shownReport?.consumption.total ?? (selectedTurn !== undefined ? totalFigure(selectedTurn) : { basis: 'absent' as const })
   const headClock = shownReport?.timing.elapsed ?? (selectedTurn !== undefined ? clockFigure(selectedTurn) : { basis: 'absent' as const })
+  const headHit = shownReport?.consumption.hitRate ?? (selectedTurn !== undefined ? hitFigure(selectedTurn) : { basis: 'absent' as const })
   const crumbs = crumbTrail(track, turns, node?.nodeId, marker, translate)
 
   const pinTurn = (id: string) => {
@@ -400,6 +401,9 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
           <span className="dsh-context-track-head-label">{t('total')}</span>
           <FigureView figure={headTotal} t={translate} />
         </span>
+        <span className="dsh-context-track-head-stat" data-head="hit">
+          <HitRateBadge figure={headHit} t={translate} />
+        </span>
         <span className="dsh-context-track-head-stat" data-head="elapsed">
           <span className="dsh-context-track-head-label">{t('elapsed')}</span>
           <FigureView figure={headClock} t={translate} showBasis={false} format={formatDuration} />
@@ -414,14 +418,12 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
         >
           {t('bandTitle')}
         </button>
-        <details className="dsh-context-track-more" data-more-menu>
-          <summary>{t('more')}</summary>
-          <div className="dsh-context-track-more-menu">
-            <button type="button" onClick={() => { bulk(true) }}>{t('expandAll')}</button>
-            <button type="button" onClick={() => { bulk(false) }}>{t('collapseAll')}</button>
-            <button type="button" onClick={() => { setRatio(DEFAULT_TREE_RATIO) }}>{t('resetSplit')}</button>
-          </div>
-        </details>
+        <MoreMenu
+          t={translate}
+          onExpandAll={() => { bulk(true) }}
+          onCollapseAll={() => { bulk(false) }}
+          onResetSplit={() => { setRatio(DEFAULT_TREE_RATIO) }}
+        />
       </header>
       {turns.length === 0 ? (
         <p className="dsh-context-track-empty">{t('noCalls')}</p>
@@ -565,6 +567,64 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
       return next
     })
   }
+}
+
+/**
+ * Header actions. The list is painted inside the header's stacking context, so
+ * opening it must not be clipped by the header's own box. It stays mounted only
+ * while open; Escape and an outside press dismiss it.
+ */
+function MoreMenu({
+  t, onExpandAll, onCollapseAll, onResetSplit,
+}: {
+  t: (key: TrackKey) => string
+  onExpandAll: () => void
+  onCollapseAll: () => void
+  onResetSplit: () => void
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Node && ref.current?.contains(event.target) === true) return
+      setOpen(false)
+    }
+    const onEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setOpen(false)
+    }
+    document.addEventListener('pointerdown', dismiss, true)
+    document.addEventListener('keydown', onEscape, true)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss, true)
+      document.removeEventListener('keydown', onEscape, true)
+    }
+  }, [open])
+  const run = (action: () => void) => () => { setOpen(false); action() }
+  return (
+    <div className="dsh-context-track-more" data-more-menu data-open={open ? 'true' : undefined} ref={ref}>
+      <button
+        type="button"
+        className="dsh-context-track-more-button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => { setOpen(value => !value) }}
+      >
+        {t('more')}
+        <span className="dsh-context-track-more-caret" aria-hidden="true">▾</span>
+      </button>
+      {open ? (
+        <div className="dsh-context-track-more-menu" role="menu">
+          <button type="button" role="menuitem" onClick={run(onExpandAll)}>{t('expandAll')}</button>
+          <button type="button" role="menuitem" onClick={run(onCollapseAll)}>{t('collapseAll')}</button>
+          <span className="dsh-context-track-more-divider" role="separator" aria-hidden="true" />
+          <button type="button" role="menuitem" onClick={run(onResetSplit)}>{t('resetSplit')}</button>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 /** One row per round, or a thin label for a sidecar that sat between rounds. */
@@ -846,6 +906,14 @@ function turnTotal(node: TurnNode): number | undefined {
 function totalFigure(node: TurnNode): Figure {
   const total = turnTotal(node)
   return total === undefined ? { basis: 'absent' } : usageFigure(total)
+}
+
+/** Same roll-up the host report uses, for the header while the report is still loading. */
+function hitFigure(node: TurnNode): Figure {
+  const usages = node.items.flatMap(item => item.kind === 'step'
+    ? item.attempts.flatMap(attempt => attempt.usage === undefined ? [] : [attempt.usage])
+    : [])
+  return cacheHitRate(usages)
 }
 
 function clockFigure(node: TurnNode): Figure {
