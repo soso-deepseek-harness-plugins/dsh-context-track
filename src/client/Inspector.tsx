@@ -1,4 +1,4 @@
-/** Tool-definition chart for the token bill. The detail pane does not repeat it. */
+/** Named breakdowns for tool definitions, injected content, and skills. */
 import { useState, type ReactNode } from 'react'
 import type { TrackKey } from './locales.js'
 import { FigureView } from './widgets.js'
@@ -6,24 +6,29 @@ import { FigureView } from './widgets.js'
 export const TOOL_PREVIEW = 5
 
 type ToolSort = 'size' | 'name'
+export type ToolListCategory = 'tools' | 'injection' | 'skill'
 
-/** Largest definitions first. Search runs before the preview cut. */
+/** Largest entries first. Search runs before the preview cut. */
 export function ToolList({
   tools,
   overhead,
+  category = 'tools',
   t,
   nested = false,
 }: {
-  tools: readonly { name: string; tokens: number }[]
+  tools: readonly { name: string; tokens: number; calls?: number }[]
   overhead?: number
+  category?: ToolListCategory
   t: (key: TrackKey) => string
-  /** Sit under the tools category row. The row already names the group. */
+  /** Sit under the category row. The row already names the group. */
   nested?: boolean
 }): ReactNode {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<ToolSort>('size')
   const [showAll, setShowAll] = useState(false)
   if (tools.length === 0 && overhead === undefined) return null
+  const nameKey = category === 'tools' ? 'catTools' : category === 'skill' ? 'catSkill' : 'catInjection'
+  const searchKey = category === 'tools' ? 'searchTools' : category === 'skill' ? 'searchSkill' : 'searchInjection'
   const needle = query.trim().toLowerCase()
   const filtered = needle.length === 0
     ? [...tools]
@@ -33,22 +38,22 @@ export function ToolList({
   const rest = ordered.length - shown.length
   const peak = Math.max(1, ...tools.map(tool => tool.tokens))
   return (
-    <section data-category="tools" className="dsh-context-track-tools" data-sort={sort} data-nested={nested ? 'true' : undefined}>
+    <section data-category={category} data-breakdown className="dsh-context-track-tools" data-sort={sort} data-hue={category} data-nested={nested ? 'true' : undefined}>
       {nested ? null : (
         <div className="dsh-context-track-tools-head">
-          <h3>{t('catTools')}</h3>
+          <h3>{t(nameKey)}</h3>
           <span className="dsh-context-track-tools-count">{ordered.length}</span>
         </div>
       )}
       {tools.length > 0 ? (
         <div className="dsh-context-track-tools-bar">
           <input
-            aria-label={t('searchTools')}
-            placeholder={t('searchTools')}
+            aria-label={t(searchKey)}
+            placeholder={t(searchKey)}
             value={query}
             onChange={event => { setQuery(event.target.value) }}
           />
-          <div className="dsh-context-track-tools-sort" role="group" aria-label={t('catTools')}>
+          <div className="dsh-context-track-tools-sort" role="group" aria-label={t(nameKey)}>
             <button type="button" aria-pressed={sort === 'size'} onClick={() => { setSort('size') }}>
               {t('sortSize')}
             </button>
@@ -62,8 +67,13 @@ export function ToolList({
       {shown.length > 0 ? (
         <ol className="dsh-context-track-tool-chart">
           {shown.map(tool => (
-            <li key={tool.name} data-tool={tool.name}>
-              <span className="dsh-context-track-tool-name" title={tool.name}>{tool.name}</span>
+            <li key={tool.name} data-tool={tool.name} {...(tool.calls !== undefined ? { 'data-calls': tool.calls } : {})}>
+              <span className="dsh-context-track-tool-name" title={tool.name}>
+                <span>{tool.name}</span>
+                {category !== 'tools' && tool.calls !== undefined ? (
+                  <small className="dsh-context-track-tool-calls">{t('entries').replace('{n}', String(tool.calls))}</small>
+                ) : null}
+              </span>
               <span className="dsh-context-track-tool-meter" aria-hidden="true">
                 <i style={{ width: `${(tool.tokens / peak) * 100}%`, ...(tool.tokens > 0 ? { minWidth: '2px' } : {}) }} />
               </span>
@@ -72,7 +82,7 @@ export function ToolList({
           ))}
         </ol>
       ) : needle.length > 0 ? (
-        <p className="dsh-context-track-muted">{t('noToolMatch')}</p>
+        <p className="dsh-context-track-muted">{t(category === 'tools' ? 'noToolMatch' : 'noMatch')}</p>
       ) : null}
       {rest > 0 ? (
         <button type="button" data-remaining={rest} onClick={() => { setShowAll(true) }}>

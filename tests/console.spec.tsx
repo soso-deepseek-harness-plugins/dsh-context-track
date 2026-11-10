@@ -289,24 +289,15 @@ describe('trace console', () => {
     expect(scratch.querySelector('[data-json-token]')).toBeNull()
   })
 
-  it('filters events without changing counts and highlights the shared compaction sequence', async () => {
+  it('highlights the compaction gap without an event filter', async () => {
     const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
     roots.push(view.root)
     await act(async () => { await Promise.resolve() })
-    const compaction = view.host.querySelector('[data-kind="compaction"]')
-    const model = view.host.querySelector('[data-kind="model"]')
-    expect(compaction?.getAttribute('data-count')).toBe('1')
-    expect(model?.getAttribute('data-count')).toBe('2')
-    expect(view.host.querySelectorAll('[data-event-seq]')).toHaveLength(0)
-    await click(compaction as HTMLButtonElement)
-    expect(view.host.querySelectorAll('[data-event-seq]')).toHaveLength(1)
-    expect(compaction?.getAttribute('data-count')).toBe('1')
-    await click(view.host.querySelector('.dsh-context-track-gap') as HTMLButtonElement)
-    expect(view.host.querySelector('[data-event-seq="2"]')?.getAttribute('data-active')).toBe('true')
-    expect(view.host.querySelector('.dsh-context-track-gap')?.getAttribute('data-active')).toBe('true')
-    await click(view.host.querySelector('[data-kind="compaction"]') as HTMLButtonElement)
-    expect(view.host.querySelectorAll('[data-event-seq]')).toHaveLength(0)
-    expect(view.host.querySelector('[data-kind="compaction"]')?.getAttribute('data-count')).toBe('1')
+    expect(view.host.querySelector('.dsh-context-track-filters')).toBeNull()
+    expect(view.host.querySelector('[data-kind]')).toBeNull()
+    const gap = view.host.querySelector('.dsh-context-track-gap') as HTMLButtonElement
+    await click(gap)
+    expect(gap.getAttribute('data-active')).toBe('true')
   })
 
   it('keeps hover from pinning a turn and moves with the keyboard', async () => {
@@ -563,6 +554,49 @@ describe('trace console', () => {
     })
     expect(row.getAttribute('data-open')).toBe('false')
     expect(row.querySelector('[data-tool]')).toBeNull()
+  })
+
+  it('expands injection and skill sources with token totals and entry counts', async () => {
+    const report = bill()
+    report.window.categories = [
+      { id: 'injection', tokens: 37 },
+      { id: 'skill', tokens: 25 },
+      { id: 'user', tokens: 9 },
+    ]
+    report.window.injections = [
+      { name: 'AGENTS.md', tokens: 25, calls: 2 },
+      { name: 'plugin-context', tokens: 12, calls: 1 },
+    ]
+    report.window.skills = [{ name: 'tdd', tokens: 25, calls: 1 }]
+    const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: report }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+    const inspector = view.host.querySelector('[data-inspector="turn"]') as HTMLElement
+    for (const id of ['injection', 'skill']) {
+      const row = inspector.querySelector(`[data-compose] > [data-category="${id}"]`) as HTMLElement
+      expect(row.getAttribute('data-open')).toBe('false')
+      expect(row.querySelector('[data-breakdown]')).toBeNull()
+      await click(row.querySelector('button[aria-expanded]') as HTMLButtonElement)
+      expect(row.getAttribute('data-open')).toBe('true')
+    }
+    const injection = inspector.querySelector('[data-breakdown][data-category="injection"]') as HTMLElement
+    const sources = injection.querySelectorAll('[data-tool]')
+    expect([...sources].map(row => row.getAttribute('data-tool'))).toEqual(['AGENTS.md', 'plugin-context'])
+    expect(sources[0]?.textContent).toContain('25')
+    expect(sources[0]?.textContent).toContain(zh.entries.replace('{n}', '2'))
+    expect(injection.querySelector('[data-tool="AGENTS.md"] .dsh-context-track-tool-meter i')?.getAttribute('style')).toContain('100%')
+    const search = injection.querySelector('input') as HTMLInputElement
+    expect(search.getAttribute('aria-label')).toBe(zh.searchInjection)
+    await act(async () => { setInputValue(search, 'plugin') })
+    expect(injection.querySelectorAll('[data-tool]')).toHaveLength(1)
+    expect(injection.querySelector('[data-tool="plugin-context"]')).not.toBeNull()
+    await act(async () => { setInputValue(search, 'missing') })
+    expect(injection.textContent).toContain(zh.noMatch)
+    const skill = inspector.querySelector('[data-compose] > [data-category="skill"]') as HTMLElement
+    expect(skill.querySelector('[data-tool="tdd"]')?.textContent).toContain('25')
+    expect(skill.querySelector('input')?.getAttribute('aria-label')).toBe(zh.searchSkill)
+    await click(skill.querySelector('button[aria-expanded]') as HTMLButtonElement)
+    expect(skill.querySelector('[data-breakdown]')).toBeNull()
   })
 
   it('keeps tool definitions in the bill chart and out of the detail', async () => {

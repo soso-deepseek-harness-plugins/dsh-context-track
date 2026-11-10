@@ -33,6 +33,8 @@ export interface ClassifiedWindow {
   tools: PricedTool[]
   definitionOverhead?: number
   toolResults: ToolResultLine[]
+  injections: ToolResultLine[]
+  skills: ToolResultLine[]
   estimatedTotal: number
 }
 
@@ -60,6 +62,8 @@ export function classifyWindow(messages: readonly unknown[], tools: unknown): Cl
   const totals = EMPTY_TOTALS()
   const items: ClassifiedItem[] = []
   const resultMap = new Map<string, ToolResultLine>()
+  const injectionMap = new Map<string, ToolResultLine>()
+  const skillMap = new Map<string, ToolResultLine>()
   list.forEach((message, index) => {
     const category = categoryOf(message, index === systemIndex)
     if (category === undefined) return
@@ -71,6 +75,14 @@ export function classifyWindow(messages: readonly unknown[], tools: unknown): Cl
       line.tokens += tokens
       line.calls += 1
       resultMap.set(toolName, line)
+    }
+    if (category === 'injection' || category === 'skill') {
+      const map = category === 'skill' ? skillMap : injectionMap
+      const name = sourceLabel(message)
+      const line = map.get(name) ?? { name, tokens: 0, calls: 0 }
+      line.tokens += tokens
+      line.calls += 1
+      map.set(name, line)
     }
     totals[category] += tokens
     items.push({
@@ -90,6 +102,8 @@ export function classifyWindow(messages: readonly unknown[], tools: unknown): Cl
     tools: priced.tools,
     ...(priced.overhead !== undefined ? { definitionOverhead: priced.overhead } : {}),
     toolResults: [...resultMap.values()],
+    injections: [...injectionMap.values()],
+    skills: [...skillMap.values()],
     estimatedTotal,
   }
 }

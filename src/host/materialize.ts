@@ -56,7 +56,20 @@ export function materializeAttempt(
   attempt: AttemptRef,
   projections: readonly SessionMessageProjection[],
 ): AttemptDetail {
-  const prefix = materializePrefix(events, attempt.inputSeq, projections)
+  return withAttemptOutput(events, attempt, materializePrefix(events, attempt.inputSeq, projections))
+}
+
+/**
+ * Output, usage, and timing for one attempt.
+ * `prefix` is the fold of `seq < attempt.inputSeq` and can be cached on its own.
+ * The attempt's status and output are not part of that fold: a running snapshot
+ * of the same seq must not be reused as this detail.
+ */
+export function withAttemptOutput(
+  events: readonly SessionEvent[],
+  attempt: AttemptRef,
+  prefix: MaterializeResult,
+): AttemptDetail {
   const outputEvent = attempt.outputSeq === undefined
     ? undefined
     : events.find(event => event.seq === attempt.outputSeq)

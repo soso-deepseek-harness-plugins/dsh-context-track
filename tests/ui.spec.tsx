@@ -285,6 +285,88 @@ describe('trace panel', () => {
     expect(liveView.host.textContent).toContain(zh.notSeen)
     expect(liveView.host.textContent).not.toContain('token-delta')
   })
+
+  it('updates the open reading and json views when a running call finishes', async () => {
+    const running: NodeDetail = {
+      kind: 'step', status: 'running', inputSeq: 2,
+      messages: [{ text: 'live-prefix' }], tools: [], toolHistory: { tools: [], updates: [] }, config: {},
+    }
+    const settled: NodeDetail = {
+      kind: 'attempt', status: 'ok', inputSeq: 3,
+      messages: [{ text: 'live-prefix' }], tools: [], toolHistory: { tools: [], updates: [] }, config: {},
+      output: { text: 'finished-answer' },
+      usage: { outputTokens: 3 },
+    }
+    let value: NodeDetail = running
+    const getNode = vi.fn(async () => ({ ok: true as const, value }))
+    const view = mount(page(session(runningStep), getNode))
+    roots.push(view.root)
+    await click(buttons(view.host, 'step 1')[0])
+    await act(async () => { await Promise.resolve() })
+    expect(view.host.querySelector('[data-output="unseen"]')?.textContent).toContain(zh.notSeen)
+    await click(view.host.querySelector('[data-view-toggle="json"]') as HTMLButtonElement)
+    expect(view.host.querySelector('[data-json-part="output"]')?.textContent).toContain('running')
+    expect(view.host.querySelector('[data-json-part="output"]')?.textContent).not.toContain('finished-answer')
+
+    value = settled
+    await act(async () => {
+      view.root.render(<TracePage {...page(session(finishedTurn), getNode)} />)
+      await Promise.resolve()
+    })
+    const reading = view.host.querySelector('[data-view-pane="reading"]')
+    const output = view.host.querySelector('[data-json-part="output"]')
+    expect(reading?.textContent).toContain('finished-answer')
+    expect(reading?.textContent).not.toContain(zh.notSeen)
+    expect(reading?.querySelector('[data-facts]')?.textContent).toContain(zh.ok)
+    expect(output?.textContent).toContain('finished-answer')
+    expect(output?.textContent).toContain('ok')
+    expect(output?.textContent).not.toContain('running')
+  })
+
+  it('refreshes turn 1 step 1 when the same track object gains the finished attempt', async () => {
+    const track: TrackState = JSON.parse(JSON.stringify(runningStep)) as TrackState
+    const running: NodeDetail = {
+      kind: 'step', status: 'running', inputSeq: 2,
+      messages: [{ text: 'live-prefix' }], tools: [], toolHistory: { tools: [], updates: [] }, config: {},
+    }
+    const settled: NodeDetail = {
+      kind: 'attempt', status: 'ok', inputSeq: 3,
+      messages: [{ text: 'live-prefix' }], tools: [], toolHistory: { tools: [], updates: [] }, config: {},
+      output: { text: 'second-round-answer' },
+      usage: { outputTokens: 4 },
+    }
+    let value: NodeDetail = running
+    const getNode = vi.fn(async () => ({ ok: true as const, value }))
+    const list = session(track)
+    const view = mount(page(list, getNode))
+    roots.push(view.root)
+    await click(buttons(view.host, 'step 1')[0])
+    await act(async () => { await Promise.resolve() })
+    await click(view.host.querySelector('[data-view-toggle="json"]') as HTMLButtonElement)
+    expect(view.host.querySelector('[data-output="unseen"]')?.textContent).toContain(zh.notSeen)
+    expect(view.host.querySelector('[data-json-part="output"]')?.textContent).toContain('running')
+
+    const step = track.root[0]
+    if (step?.kind !== 'turn') throw new Error('missing turn')
+    const item = step.items[0]
+    if (item?.kind !== 'step') throw new Error('missing step')
+    item.status = 'ok'
+    item.attempts = [{ id: 'attempt:1:1:1', attempt: 1, inputSeq: 3, outputSeq: 3, status: 'ok' }]
+    value = settled
+    const calls = getNode.mock.calls.length
+    await act(async () => {
+      view.root.render(<TracePage {...page(list, getNode)} />)
+      await Promise.resolve()
+    })
+    expect(getNode.mock.calls.length).toBeGreaterThan(calls)
+    const reading = view.host.querySelector('[data-view-pane="reading"]')
+    const output = view.host.querySelector('[data-json-part="output"]')
+    expect(reading?.textContent).toContain('second-round-answer')
+    expect(reading?.textContent).not.toContain(zh.notSeen)
+    expect(reading?.querySelector('[data-facts]')?.textContent).toContain(zh.ok)
+    expect(output?.textContent).toContain('second-round-answer')
+    expect(output?.textContent).not.toContain('running')
+  })
 })
 
 function session(track: TrackState): ListState {

@@ -338,16 +338,11 @@ export const traceCss = `
   width: 3px;
   background: var(--dsw-alias-label-tertiary);
 }
-.dsh-context-track-bill-figures,
-.dsh-context-track-bill-second {
+.dsh-context-track-bill-figures {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem 0.75rem;
-  min-width: 0;
-}
-.dsh-context-track-events {
-  box-sizing: border-box;
   min-width: 0;
 }
 .dsh-context-track-num {
@@ -471,7 +466,13 @@ export const traceCss = `
 }
 .dsh-context-track-cats li > .dsh-context-track-tools {
   grid-column: 1 / -1;
-  margin: 0.15rem 0 0.2rem;
+  box-sizing: border-box;
+  margin: 0.15rem 0 0.3rem 0.52rem;
+  padding: 0.3rem 0 0.15rem 0.65rem;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+.dsh-context-track-cats > li[data-open="true"] {
+  row-gap: 0.35rem;
 }
 .dsh-context-track-tools-head {
   display: flex;
@@ -556,6 +557,11 @@ export const traceCss = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.dsh-context-track-tool-calls {
+  margin-left: 0.3rem;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.68rem;
+}
 .dsh-context-track-tool-meter {
   display: block;
   height: 0.42rem;
@@ -569,6 +575,8 @@ export const traceCss = `
   border-radius: inherit;
   background: var(--dsh-cat-tools);
 }
+.dsh-context-track-tools[data-hue="injection"] .dsh-context-track-tool-meter i { background: var(--dsh-cat-injection); }
+.dsh-context-track-tools[data-hue="skill"] .dsh-context-track-tool-meter i { background: var(--dsh-cat-skill); }
 .dsh-context-track-tools button[data-remaining] {
   align-self: flex-start;
   padding: 0.08rem 0.45rem;
@@ -590,14 +598,6 @@ export const traceCss = `
   background: transparent;
   border: 1px dashed var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
-}
-.dsh-context-track button.dsh-context-track-chip {
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-2);
-  padding: 0.1rem 0.4rem;
-}
-.dsh-context-track button.dsh-context-track-chip[aria-pressed="true"] {
-  background: var(--dsw-alias-interactive-bg-hover);
 }
 .dsh-context-track-output-meta {
   display: flex;

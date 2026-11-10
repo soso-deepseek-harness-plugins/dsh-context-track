@@ -13,6 +13,7 @@ import { billOf, sumUsage } from '../shared/figures.js'
 import {
   defaultExpanded,
   emptyTrack,
+  findNode,
   toggleExpanded,
   type RootNode,
   type SidecarNode,
@@ -20,10 +21,9 @@ import {
   type TurnNode,
 } from '../shared/model.js'
 import '../shared/projection.js'
-import type { EventKind, TurnReport } from '../shared/report.js'
+import type { TurnReport } from '../shared/report.js'
 import { Detail } from './Detail.js'
 import { abbreviate, copyText, formatDuration, type ShownNumber } from './format.js'
-import { EventAxis } from './EventAxis.js'
 import { layoutForWidth } from './layout.js'
 import type { TrackKey } from './locales.js'
 import { ensureStyles } from './styles.js'
@@ -77,7 +77,7 @@ export function TraceMain(props: Omit<TracePageProps, 'sessionId' | 'host'>): Re
   return <TracePage {...props} host="main" sessionId={sessionId} />
 }
 
-/** Turn rail and the selected turn's token, timing, tree, and events. */
+/** Turn rail and the selected turn's token, timing, and tree. */
 export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }: TracePageProps): ReactNode {
   ensureStyles()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -96,7 +96,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const [activeKey, setActiveKey] = useState<string | undefined>(undefined)
   const [attemptId, setAttemptId] = useState('')
   const [eventSeq, setEventSeq] = useState<number | undefined>(undefined)
-  const [filter, setFilter] = useState<EventKind | undefined>(undefined)
   const [detail, setDetail] = useState<NodeDetail | undefined>(undefined)
   const [report, setReport] = useState<TurnReport | MissingDetail | undefined>(undefined)
   const [paneSize, setPaneSize] = useState<Partial<Record<PaneName, number>>>({})
@@ -120,7 +119,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     setAttemptId('')
     setEventSeq(undefined)
     setActiveKey(undefined)
-    setFilter(undefined)
   }, [sessionId])
 
   useEffect(() => () => { clearTimeout(revealTimer.current) }, [])
@@ -139,6 +137,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     revealTimer.current = setTimeout(() => { setDetailShown(true) }, DETAIL_REVEAL_MS)
   }
 
+  const revision = openRevision(list.projectionsBySession, node)
   useEffect(() => {
     if (sessionId === undefined || node === undefined) return undefined
     let cancelled = false
@@ -159,7 +158,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
       setDetail(result.value)
     }, showMissing)
     return () => { cancelled = true }
-  }, [sessionId, node, track, getNode])
+  }, [sessionId, node, track, revision, getNode])
 
   const turnId = selectedTurn?.id
   useEffect(() => {
@@ -182,7 +181,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
 
   const cursors = sessionId === undefined
     ? []
-    : visibleTargets(sessionId, track, open, id => readTrack(list.projectionsBySession, id), filter)
+    : visibleTargets(sessionId, track, open, id => readTrack(list.projectionsBySession, id))
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (sessionId === undefined || turns.length === 0) return
     const target = event.target
@@ -296,22 +295,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                     setPinned(true)
                   }
                 }}
-              >
-                <EventAxis
-                  events={shownReport.events}
-                  filter={filter}
-                  activeSeq={eventSeq}
-                  t={translate}
-                  onFilter={setFilter}
-                  onSelect={event => {
-                    setEventSeq(event.seq)
-                    if (event.nodeId === undefined) return
-                    setNode({ sessionId, nodeId: event.nodeId })
-                    setPinned(true)
-                    if (event.nodeId.startsWith('attempt:')) setAttemptId(event.nodeId)
-                  }}
-                />
-              </TokenCard>
+              />
             </div>
           ) : null}
           {marker === undefined && shownReport !== undefined ? (
@@ -330,7 +314,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 track={track}
                 trackOf={trackOf}
                 open={open}
-                filter={filter}
                 onToggle={(key, kind, status) => {
                   setOpen(current => toggleExpanded(current, key, defaultExpanded(kind, status)))
                 }}
@@ -706,4 +689,42 @@ function readTrack(
   sessionId: string,
 ): TrackState | undefined {
   return projections[sessionId]?.values.track
+}
+
+/**
+ * Facts that change when the open node's call settles.
+ * The projection may keep the same track object, so the detail reload cannot
+ * key off that object's identity. A child step uses its own session's track.
+ */
+function openRevision(
+  projections: { [id: string]: { values: { track?: TrackState } } | undefined },
+  node: { sessionId: string; nodeId: string } | undefined,
+): string {
+  if (node === undefined) return ''
+  const track = readTrack(projections, node.sessionId)
+  if (track === undefined) return `absent:${node.sessionId}:${node.nodeId}`
+  const found = findNode(track, node.nodeId)
+  if (found === undefined) return `missing:${node.nodeId}`
+  switch (found.kind) {
+    case 'step':
+      return [
+        'step',
+        found.node.status,
+        found.node.inputSeq,
+        found.node.endSeq ?? '',
+        found.node.attempts.map(item => `${item.id}:${item.status}:${item.outputSeq ?? ''}:${item.retrySeq ?? ''}`).join(','),
+      ].join('|')
+    case 'attempt':
+      return `attempt|${found.node.status}|${found.node.outputSeq ?? ''}|${found.node.retrySeq ?? ''}`
+    case 'tool':
+      return `tool|${found.node.status}|${found.node.resultSeq ?? ''}|${found.node.childLabel ?? ''}|${found.node.childMode ?? ''}`
+    case 'sidecar':
+      return `side|${found.node.status}|${found.node.outputSeq ?? ''}|${found.node.endSeq ?? ''}`
+    case 'turn':
+      return `turn|${found.node.status}|${found.node.endSeq ?? ''}`
+    case 'unlinked':
+      return `unlinked|${found.node.childLabel ?? ''}|${found.node.childMode ?? ''}`
+    default:
+      return 'unknown'
+  }
 }

@@ -7,7 +7,7 @@ import type { ContextEvent, TurnReport } from '../shared/report.js'
 import type { TrackKey } from './locales.js'
 import { TimingCard } from './TimingCard.js'
 import { CATEGORY_KEY, FigureView } from './widgets.js'
-import { ToolList } from './Inspector.js'
+import { ToolList, type ToolListCategory } from './Inspector.js'
 
 /** Identity, not rank. A seventh category keeps its name and a neutral bar. */
 const HUE: Record<CategoryId, string> = {
@@ -54,23 +54,25 @@ export function TokenCard({
   trackOf,
   t,
   onGap,
-  children,
 }: {
   report: TurnReport
   activeSeq?: number
   trackOf: (sessionId: string) => TrackState | undefined
   t: (key: TrackKey) => string
   onGap: (seq: number) => void
-  children?: ReactNode
 }): ReactNode {
   const { consumption, window } = report
   const ranked = composeRows(window.categories)
   const peak = ranked.reduce((max, category) => Math.max(max, category.tokens), 0)
   const safe = peak > 0 ? peak : 1
-  const [toolsOpen, setToolsOpen] = useState(false)
-  const toolDetail = window.toolDefinitions.length > 0 || window.definitionOverhead !== undefined
-  const toolsFold = toolDetail && ranked.some(category => category.id === 'tools')
-  const toggleTools = () => { setToolsOpen(open => !open) }
+  const [open, setOpen] = useState<Partial<Record<ToolListCategory, boolean>>>({})
+  const details: Partial<Record<ToolListCategory, readonly { name: string; tokens: number; calls?: number }[]>> = {
+    tools: window.toolDefinitions,
+    injection: window.injections ?? [],
+    skill: window.skills ?? [],
+  }
+  const hasDetail = (id: ToolListCategory) => (details[id]?.length ?? 0) > 0 || (id === 'tools' && window.definitionOverhead !== undefined)
+  const toggle = (id: ToolListCategory) => { setOpen(current => ({ ...current, [id]: current[id] !== true })) }
   const reclaimed = reclaimedOf(report.events)
   const hitText = (value: number) => ({ text: formatHitPercent(value), full: formatHitPercent(value), abbreviated: false })
   return (
@@ -92,19 +94,21 @@ export function TokenCard({
       <p className="dsh-context-track-muted">{t('compose')}</p>
       <ol className="dsh-context-track-cats" data-compose>
         {ranked.map(category => {
-          const fold = toolsFold && category.id === 'tools'
+          const detailCategory = category.id === 'tools' || category.id === 'injection' || category.id === 'skill' ? category.id : undefined
+          const fold = detailCategory !== undefined && hasDetail(detailCategory)
+          const expanded = fold && open[detailCategory] === true
           const name = t(CATEGORY_KEY[category.id])
           return (
             <li
               key={category.id}
               data-category={category.id}
               data-hue={HUE[category.id]}
-              data-open={fold ? (toolsOpen ? 'true' : 'false') : undefined}
+              data-open={fold ? (expanded ? 'true' : 'false') : undefined}
             >
               <div
                 className="dsh-context-track-cat-line"
                 data-fold={fold ? 'true' : undefined}
-                onClick={fold ? toggleTools : undefined}
+                onClick={fold ? () => { toggle(detailCategory) } : undefined}
               >
                 <span className="dsh-context-track-cat-name">
                   <span>{name}</span>
@@ -112,11 +116,11 @@ export function TokenCard({
                     <button
                       type="button"
                       className="dsh-context-track-cat-toggle"
-                      aria-expanded={toolsOpen}
+                      aria-expanded={expanded}
                       aria-label={name}
                       onClick={(event: MouseEvent) => {
                         event.stopPropagation()
-                        toggleTools()
+                        toggle(detailCategory)
                       }}
                     >
                       <Caret />
@@ -128,16 +132,22 @@ export function TokenCard({
                 </span>
                 <FigureView figure={{ basis: 'estimated', value: category.tokens }} t={t} showBasis={false} />
               </div>
-              {fold && toolsOpen ? (
-                <ToolList tools={window.toolDefinitions} overhead={window.definitionOverhead} t={t} nested />
+              {expanded ? (
+                <ToolList
+                  tools={details[detailCategory] ?? []}
+                  overhead={detailCategory === 'tools' ? window.definitionOverhead : undefined}
+                  category={detailCategory}
+                  t={t}
+                  nested
+                />
               ) : null}
             </li>
           )
         })}
       </ol>
-      {toolsFold ? null : (
+      {hasDetail('tools') && !ranked.some(category => category.id === 'tools') ? (
         <ToolList tools={window.toolDefinitions} overhead={window.definitionOverhead} t={t} />
-      )}
+      ) : null}
       <TimingCard report={report} t={t} />
       {compactionPresent(report) ? (
         <section data-compaction>
@@ -175,7 +185,6 @@ export function TokenCard({
           </p>
         )
       })}
-      <div className="dsh-context-track-bill-second">{children}</div>
     </div>
   )
 }

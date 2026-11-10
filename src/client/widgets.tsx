@@ -2,7 +2,6 @@
 import type { MouseEvent, ReactNode } from 'react'
 import type { CategoryId } from '../shared/classify.js'
 import type { Figure } from '../shared/figures.js'
-import type { EventKind } from '../shared/report.js'
 import { abbreviate, copyText, type ShownNumber } from './format.js'
 import type { TrackKey } from './locales.js'
 
@@ -14,17 +13,6 @@ export const CATEGORY_KEY: Record<CategoryId, TrackKey> = {
   injection: 'catInjection',
   skill: 'catSkill',
   history: 'catHistory',
-}
-
-export const EVENT_KEY: Record<EventKind, TrackKey> = {
-  injection: 'kindInjection',
-  skill: 'kindSkill',
-  compaction: 'kindCompaction',
-  trim: 'kindTrim',
-  model: 'kindModel',
-  tool: 'kindTool',
-  switch: 'kindSwitch',
-  title: 'kindTitle',
 }
 
 export function FigureView({

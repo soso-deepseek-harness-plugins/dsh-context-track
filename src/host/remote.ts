@@ -7,10 +7,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SessionId, type Session, type SessionEvent, type SessionMessageProjection } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type { InstructionRecord, MissingDetail, NodeDetail, ToolDetail, TurnDetail, UnlinkedDetail } from '../shared/detail.js'
+import type { InstructionRecord, MissingDetail, NodeDetail, StepRunningDetail, ToolDetail, TurnDetail, UnlinkedDetail } from '../shared/detail.js'
 import type { TurnReport } from '../shared/report.js'
 import {
   findNode,
+  type AttemptRef,
   type SidecarNode,
   type ToolNode,
   type TrackState,
@@ -18,7 +19,7 @@ import {
   type UnlinkedNode,
 } from '../shared/model.js'
 import { foldAll } from './fold.js'
-import { materializeAttempt, materializeRunning } from './materialize.js'
+import { materializePrefix, withAttemptOutput, type MaterializeResult } from './materialize.js'
 import { buildTurnReport, selectAttempt } from './turn.js'
 import { compactionDetail, compactionOrdinal, searchDetail, titleDetail } from './sidecar.js'
 import { pairInstruction, Supplement, type SupplementOptions } from './supplement.js'
@@ -84,7 +85,8 @@ export class TrackRemote extends TypertRemoteService {
   /**
    * Bill, window, clocks, and event list for one turn.
    * An empty `attemptId` uses the last successful attempt, or the last attempt.
-   * The same `inputSeq` reuses the prefix cache `getNode` already fills.
+   * The same `inputSeq` reuses the prefix fold `getNode` already fills. That fold
+   * is only the input. Output and status are read from the current attempt.
    */
   @Remote
   async getTurn(sessionId: string, turnId: string, attemptId: string): Promise<TurnReport | MissingDetail> {
@@ -96,11 +98,7 @@ export class TrackRemote extends TypertRemoteService {
       const selected = selectAttempt(found.node, attemptId)
       const projections = hostSessions(this.ctx).messageProjections
       const inputSeq = selected.attempt?.inputSeq ?? loaded.events.length
-      const detail = this.cache.getOr(sessionId, `input:${inputSeq}`, () => (
-        selected.attempt !== undefined
-          ? materializeAttempt(loaded.events, selected.attempt, projections)
-          : materializeRunning(loaded.events, loaded.events.length, projections)
-      ))
+      const prefix = this.prefixAt(sessionId, loaded.events, inputSeq, projections)
       const attemptKey = selected.attempt?.id ?? 'running'
       return this.cache.getOr(
         sessionId,
@@ -109,8 +107,8 @@ export class TrackRemote extends TypertRemoteService {
           events: loaded.events,
           turn: found.node,
           ...(selected.attempt !== undefined ? { attempt: selected.attempt } : {}),
-          messages: detail.messages,
-          tools: detail.tools,
+          messages: prefix.messages,
+          tools: prefix.tools,
           readAt: Date.now(),
         }),
       )
@@ -135,20 +133,14 @@ export class TrackRemote extends TypertRemoteService {
       const projections = hostSessions(this.ctx).messageProjections
       switch (found.kind) {
         case 'attempt':
-          return this.cache.getOr(sessionId, `input:${found.node.inputSeq}`, () =>
-            materializeAttempt(loaded.events, found.node, projections))
+          return this.attemptDetail(sessionId, loaded.events, found.node, projections)
         case 'step': {
           const latest = found.node.attempts.at(-1)
-          if (latest !== undefined) {
-            return this.cache.getOr(sessionId, `input:${latest.inputSeq}`, () =>
-              materializeAttempt(loaded.events, latest, projections))
-          }
-          const inputSeq = loaded.events.length
-          return this.cache.getOr(sessionId, `input:${inputSeq}`, () =>
-            materializeRunning(loaded.events, inputSeq, projections))
+          if (latest !== undefined) return this.attemptDetail(sessionId, loaded.events, latest, projections)
+          return this.runningDetail(sessionId, loaded.events, projections)
         }
         case 'tool':
-          return this.cache.getOr(sessionId, `tool:${found.node.callSeq}`, () => toolDetail(loaded.events, found.node))
+          return this.cache.getOr(sessionId, toolCacheKey(found.node), () => toolDetail(loaded.events, found.node))
         case 'turn':
           return turnDetail(found.node)
         case 'unlinked':
@@ -169,7 +161,7 @@ export class TrackRemote extends TypertRemoteService {
     node: SidecarNode,
     projections: readonly SessionMessageProjection[],
   ): Promise<NodeDetail> {
-    const key = `side:${node.requestSeq}`
+    const key = `side:${node.requestSeq}:${node.status}:${node.outputSeq ?? 'open'}:${node.endSeq ?? 'open'}`
     const hit = this.cache.get<NodeDetail>(sessionId, key)
     if (hit !== undefined) return hit
     if (node.purpose === 'session-title') return this.cache.set(sessionId, key, titleDetail(events, node))
@@ -185,6 +177,46 @@ export class TrackRemote extends TypertRemoteService {
     } catch {
       return { recorded: false }
     }
+  }
+
+  /** Fold of `seq < inputSeq`. Stable for an append-only log, so it can be reused. */
+  private prefixAt(
+    sessionId: string,
+    events: readonly SessionEvent[],
+    inputSeq: number,
+    projections: readonly SessionMessageProjection[],
+  ): MaterializeResult {
+    return this.cache.getOr(sessionId, `input:${inputSeq}`, () => materializePrefix(events, inputSeq, projections))
+  }
+
+  /**
+   * A step with no assistant event yet.
+   * Keyed by the log length, not by `input:${length}`: the next assistant event
+   * uses that same seq as its input, and must not inherit this running snapshot.
+   */
+  private runningDetail(
+    sessionId: string,
+    events: readonly SessionEvent[],
+    projections: readonly SessionMessageProjection[],
+  ): StepRunningDetail {
+    const inputSeq = events.length
+    const prefix = this.prefixAt(sessionId, events, inputSeq, projections)
+    return this.cache.getOr(sessionId, `running:${inputSeq}`, () => ({
+      kind: 'step',
+      status: 'running',
+      inputSeq,
+      ...prefix,
+    }))
+  }
+
+  /** Status and output come from the attempt as it stands now. A later retry must not see the first snapshot. */
+  private attemptDetail(
+    sessionId: string,
+    events: readonly SessionEvent[],
+    attempt: AttemptRef,
+    projections: readonly SessionMessageProjection[],
+  ): ReturnType<typeof withAttemptOutput> {
+    return withAttemptOutput(events, attempt, this.prefixAt(sessionId, events, attempt.inputSeq, projections))
   }
 
   private async load(sessionId: string): Promise<{ events: readonly SessionEvent[]; state: TrackState } | undefined> {
@@ -222,6 +254,19 @@ function hostSessions(ctx: Context): HostSessions {
 
 function isSupplementOptions(value: unknown): value is SupplementOptions {
   return value !== null && typeof value === 'object' && typeof (value as SupplementOptions).directory === 'function'
+}
+
+/** Result, status, and child label can all arrive after the call is first opened. */
+function toolCacheKey(node: ToolNode): string {
+  return [
+    'tool',
+    node.callSeq,
+    node.status,
+    node.resultSeq ?? 'open',
+    node.childSessionId ?? '',
+    node.childLabel ?? '',
+    node.childMode ?? '',
+  ].join(':')
 }
 
 function toolDetail(events: readonly SessionEvent[], node: ToolNode): ToolDetail {

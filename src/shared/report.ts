@@ -21,6 +21,8 @@ export interface WindowReport {
   toolDefinitions: NamedLine[]
   definitionOverhead?: number
   toolResults: NamedLine[]
+  injections?: NamedLine[]
+  skills?: NamedLine[]
   estimated: Figure
   exactInput: Figure
   delta?: Figure

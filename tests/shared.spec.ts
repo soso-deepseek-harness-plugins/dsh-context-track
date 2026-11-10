@@ -35,8 +35,10 @@ describe('estimate', () => {
 
 describe('classify', () => {
   it('keeps a skill invocation out of injection and counts tool results exactly', () => {
-    const skill = { role: 'user', content: [{ type: 'text', text: 'skill body' }], source: { kind: 'skill-invocation' } }
+    const skill = { role: 'user', content: [{ type: 'text', text: 'skill body' }], source: { kind: 'skill-invocation', skill: 'tdd' } }
+    const catalog = { role: 'user', content: [{ type: 'text', text: 'available skills' }], source: { kind: 'skill-catalog', name: 'code-review' } }
     const injected = { role: 'user', content: [{ type: 'text', text: 'from file' }], source: { kind: 'file', path: 'AGENTS.md' } }
+    const laterInjection = { role: 'user', content: [{ type: 'text', text: 'updated file' }], source: { kind: 'file', path: 'AGENTS.md' } }
     const user = { role: 'user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }
     const call = { role: 'assistant', content: [{ type: 'tool-call', id: 'c1', name: 'echo', arguments: '{}' }] }
     const results = [1, 2, 3].map(() => ({
@@ -45,11 +47,21 @@ describe('classify', () => {
       content: [{ type: 'text', text: 'ok' }],
       source: { kind: 'tool', callId: 'c1' },
     }))
-    const window = classifyWindow([skill, injected, user, call, ...results], [])
+    const window = classifyWindow([skill, catalog, injected, laterInjection, user, call, ...results], [])
     expect(window.totals.skill).toBeGreaterThan(0)
-    expect(window.items.filter(item => item.category === 'injection').map(item => item.message)).toEqual([injected])
+    expect(window.items.filter(item => item.category === 'injection').map(item => item.message)).toEqual([injected, laterInjection])
     expect(window.items.some(item => item.category === 'skill' && item.message === skill)).toBe(true)
     expect(window.toolResults).toEqual([expect.objectContaining({ name: 'echo', calls: 3 })])
+    expect(window.injections).toEqual([{
+      name: 'AGENTS.md',
+      tokens: window.items.filter(item => item.category === 'injection').reduce((sum, item) => sum + item.tokens, 0),
+      calls: 2,
+    }])
+    expect(window.skills.map(line => ({ name: line.name, calls: line.calls }))).toEqual([
+      { name: 'tdd', calls: 1 },
+      { name: 'code-review', calls: 1 },
+    ])
+    expect(window.skills.reduce((sum, line) => sum + line.tokens, 0)).toBe(window.totals.skill)
   })
 })
 
