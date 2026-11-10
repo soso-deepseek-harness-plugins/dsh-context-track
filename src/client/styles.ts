@@ -173,14 +173,15 @@ export const traceCss = `
 .dsh-context-track button.dsh-context-track-turn {
   display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: 0.3rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.14rem;
   min-width: 0;
-  height: 1.5rem;
-  padding: 0 0.5rem;
+  padding: 0.26rem 0.55rem;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 0.5rem;
   font-size: 0.75rem;
+  line-height: 1.25;
   white-space: nowrap;
   transition: background 140ms ease, border-color 140ms ease;
 }
@@ -194,13 +195,42 @@ export const traceCss = `
 .dsh-context-track button.dsh-context-track-turn[data-pinned="true"] {
   box-shadow: inset 0 -2px 0 var(--dsw-alias-label-secondary);
 }
+.dsh-context-track-turn-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
 .dsh-context-track-turn-name {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
-.dsh-context-track-turn-total {
+.dsh-context-track-turn-flag {
+  font-size: 0.68rem;
+}
+.dsh-context-track-turn-summary {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+.dsh-context-track-turn-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.28rem;
   color: var(--dsw-alias-label-secondary);
   font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.dsh-context-track-turn-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+.dsh-context-track-turn-stat-label {
+  color: var(--dsw-alias-label-tertiary);
+}
+.dsh-context-track-turn-sep {
+  color: var(--dsw-alias-label-tertiary);
 }
 .dsh-context-track button.dsh-context-track-mark {
   flex: 0 0 auto;

@@ -350,6 +350,45 @@ describe('trace console', () => {
     expect(view.host.querySelector('[data-turn-id="turn:1"][data-pinned="true"]')).not.toBeNull()
   })
 
+  it('labels each round tab with its name, shape, and both numbers', async () => {
+    const two = state([
+      {
+        kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 4, startTime: 1000, endTime: 2000,
+        items: [step([{ id: 'attempt:1:1:1', status: 'ok', usage: { inputTokens: 1, outputTokens: 100, totalTokens: 103 } }])],
+      },
+      {
+        kind: 'turn', id: 'turn:2', turn: 2, status: 'ok', startSeq: 5, endSeq: 9, startTime: 3000, endTime: 5000,
+        items: [{
+          kind: 'step', id: 'step:2:1', turn: 2, step: 1, status: 'ok', startSeq: 5, endSeq: 9,
+          startTime: 3000, endTime: 5000, inputSeq: 9,
+          attempts: [{
+            id: 'attempt:2:1:1', attempt: 1, inputSeq: 9, outputSeq: 9, status: 'ok',
+            usage: { inputTokens: 10, outputTokens: 900, totalTokens: 910 },
+          }],
+          tools: [{ kind: 'tool', id: 'tool:8', callId: 'c8', name: 'search', status: 'ok', callSeq: 8 }],
+        }],
+      },
+    ])
+    const view = mount(session(two), vi.fn(), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+
+    const first = chipOf(view.host, 'turn:1')
+    expect(first?.getAttribute('aria-current')).not.toBe('true')
+    expect(first?.textContent).toContain('turn 1')
+    expect(first?.textContent).toContain(zh.summaryTurn.replace('{n}', '1'))
+    expect(first?.querySelector('[data-chip-stat="elapsed"]')?.textContent).toContain(zh.elapsed)
+    expect(first?.querySelector('[data-chip-stat="elapsed"]')?.textContent).toContain('1 s')
+    expect(first?.querySelector('[data-chip-stat="total"]')?.textContent).toContain(zh.total)
+    expect(first?.querySelector('[data-chip-stat="total"]')?.textContent).toContain('103')
+
+    const second = chipOf(view.host, 'turn:2')
+    expect(second?.textContent).toContain('turn 2')
+    expect(second?.textContent).toContain(zh.summaryTools.replace('{n}', '1'))
+    expect(second?.querySelector('[data-chip-stat="elapsed"]')?.textContent).toContain('2 s')
+    expect(second?.querySelector('[data-chip-stat="total"]')?.textContent).toContain('910')
+  })
+
   it('expands and collapses the current tree row with the arrow keys', async () => {
     const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
     roots.push(view.root)

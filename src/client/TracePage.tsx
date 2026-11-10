@@ -600,31 +600,17 @@ function TurnStrip({
       }}
     >
       {entries.map(entry => entry.kind === 'turn' ? (
-        <button
+        <TurnChip
           key={entry.node.id}
-          type="button"
-          className="dsh-context-track-turn"
-          role="tab"
-          aria-selected={selectedId === entry.node.id}
-          aria-current={selectedId === entry.node.id ? 'true' : undefined}
-          data-turn-id={entry.node.id}
-          data-turn={entry.node.turn}
-          data-hover={hoverId === entry.node.id ? 'true' : undefined}
-          data-pinned={pinned && selectedId === entry.node.id ? 'true' : undefined}
-          ref={selectedId === entry.node.id ? selectedRef : undefined}
-          onMouseEnter={() => { onHover(entry.node.id) }}
-          onClick={() => { onTurn(entry.node.id) }}
-        >
-          <span className={`dsh-context-track-dot dsh-context-track-status-${entry.node.status}`} data-status={entry.node.status} />
-          <span className="dsh-context-track-turn-name">{entry.node.turn}</span>
-          {entry.node.status === 'ok' ? null : (
-            <span className={`dsh-context-track-status-${entry.node.status}`}>{t(entry.node.status)}</span>
-          )}
-          {entry.node.startTime !== undefined && entry.node.endTime !== undefined ? (
-            <CopySpan shown={formatDuration(entry.node.endTime - entry.node.startTime)} />
-          ) : null}
-          {selectedId === entry.node.id ? <TurnTotal node={entry.node} /> : null}
-        </button>
+          node={entry.node}
+          selected={selectedId === entry.node.id}
+          hovered={hoverId === entry.node.id}
+          pinned={pinned && selectedId === entry.node.id}
+          selectedRef={selectedRef}
+          t={t}
+          onHover={onHover}
+          onTurn={onTurn}
+        />
       ) : (
         <button
           key={entry.node.id}
@@ -646,12 +632,82 @@ function TurnStrip({
   )
 }
 
-/** The selected chip carries the round total; every chip would be too wide. */
-function TurnTotal({ node }: { node: TurnNode }): ReactNode {
-  const total = turnTotal(node)
-  if (total === undefined) return null
+/**
+ * One round tab: identity and scale on the first line, the two numbers that
+ * matter on the second. A bare turn number beside a duration and a total read
+ * as a run of numbers, so every value now carries its own label.
+ */
+function TurnChip({
+  node, selected, hovered, pinned, selectedRef, t, onHover, onTurn,
+}: {
+  node: TurnNode
+  selected: boolean
+  hovered: boolean
+  pinned: boolean
+  selectedRef: { current: HTMLButtonElement | null }
+  t: (key: TrackKey) => string
+  onHover: (id: string | undefined) => void
+  onTurn: (id: string) => void
+}): ReactNode {
+  const elapsed = turnClock(node)
   return (
-    <span className="dsh-context-track-turn-total" data-turn-total>
+    <button
+      type="button"
+      className="dsh-context-track-turn"
+      role="tab"
+      aria-selected={selected}
+      aria-current={selected ? 'true' : undefined}
+      data-turn-id={node.id}
+      data-turn={node.turn}
+      data-hover={hovered ? 'true' : undefined}
+      data-pinned={pinned ? 'true' : undefined}
+      ref={selected ? selectedRef : undefined}
+      onMouseEnter={() => { onHover(node.id) }}
+      onClick={() => { onTurn(node.id) }}
+    >
+      <span className="dsh-context-track-turn-top">
+        <span className={`dsh-context-track-dot dsh-context-track-status-${node.status}`} data-status={node.status} />
+        <span className="dsh-context-track-turn-name">{t('turn').replace('{n}', String(node.turn))}</span>
+        {node.status === 'ok' ? null : (
+          <span className={`dsh-context-track-status-${node.status} dsh-context-track-turn-flag`}>{t(node.status)}</span>
+        )}
+        <TurnSummary node={node} t={t} />
+      </span>
+      <span className="dsh-context-track-turn-meta">
+        <span className="dsh-context-track-turn-stat" data-chip-stat="elapsed">
+          <span className="dsh-context-track-turn-stat-label">{t('elapsed')}</span>
+          {elapsed === undefined
+            ? <span className="dsh-context-track-muted">{t('absent')}</span>
+            : <CopySpan shown={formatDuration(elapsed)} />}
+        </span>
+        <span className="dsh-context-track-turn-sep" aria-hidden="true">·</span>
+        <span className="dsh-context-track-turn-stat" data-chip-stat="total">
+          <span className="dsh-context-track-turn-stat-label">{t('total')}</span>
+          <TurnTotal node={node} t={t} />
+        </span>
+      </span>
+    </button>
+  )
+}
+
+/** How much happened in this round, so the tabs differ by more than a number. */
+function TurnSummary({ node, t }: { node: TurnNode; t: (key: TrackKey) => string }): ReactNode {
+  const steps = node.items.filter(item => item.kind === 'step').length
+  if (steps === 0) return null
+  const tools = node.items.reduce((sum, item) => item.kind === 'step'
+    ? sum + item.tools.length + (item.searches?.length ?? 0)
+    : sum, 0)
+  const parts = [t('summaryTurn').replace('{n}', String(steps))]
+  if (tools > 0) parts.push(t('summaryTools').replace('{n}', String(tools)))
+  return <span className="dsh-context-track-turn-summary" data-chip-summary>{parts.join(' · ')}</span>
+}
+
+/** Every tab carries its round total, labelled, so cost can be compared without clicking. */
+function TurnTotal({ node, t }: { node: TurnNode; t: (key: TrackKey) => string }): ReactNode {
+  const total = turnTotal(node)
+  if (total === undefined) return <span className="dsh-context-track-muted">{t('absent')}</span>
+  return (
+    <span data-turn-total>
       <CopySpan shown={abbreviate(total)} />
     </span>
   )
