@@ -62,7 +62,6 @@ export function ContextBand({
   activeSeq,
   trackOf,
   t,
-  onToggle,
   onCategory,
   onGap,
 }: {
@@ -71,7 +70,6 @@ export function ContextBand({
   activeSeq?: number
   trackOf: (sessionId: string) => TrackState | undefined
   t: (key: TrackKey) => string
-  onToggle: () => void
   onCategory: (id: CategoryId) => void
   onGap: (seq: number) => void
 }): ReactNode {
@@ -100,16 +98,6 @@ export function ContextBand({
           onMore={() => { setAllLegend(value => !value) }}
           onCategory={onCategory}
         />
-        <button
-          type="button"
-          className="dsh-context-track-band-toggle"
-          data-band-toggle
-          aria-expanded={open}
-          aria-label={open ? t('bandCollapse') : t('bandExpand')}
-          onClick={onToggle}
-        >
-          <span aria-hidden="true">{open ? '▴' : '▾'}</span>
-        </button>
       </div>
       {open ? (
         <div className="dsh-context-track-band-panel" data-band-panel>
@@ -300,8 +288,13 @@ function Legend({
   onCategory: (id: CategoryId) => void
 }): ReactNode {
   if (ranked.length === 0) return null
-  const shown = all ? ranked : ranked.slice(0, LEGEND_PREVIEW)
-  const rest = ranked.length - shown.length
+  /* Size order, not compose order: tool definitions and tool results sit after
+     the user row in the bar, yet often own its widest segments. Naming the four
+     largest keeps every big swatch in the legend and pushes only the small ones
+     behind `+N`. */
+  const order = [...ranked].sort(bySize)
+  const shown = all ? order : order.slice(0, LEGEND_PREVIEW)
+  const rest = order.length - shown.length
   return (
     <span className="dsh-context-track-legend" data-legend-list>
       {shown.map(category => (

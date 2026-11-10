@@ -93,6 +93,26 @@ function step(attempts: { id: string; status: 'ok' | 'error'; usage?: { inputTok
   }
 }
 
+/** A step of one round whose calls are numbered in log order. */
+function calls(id: string, turn: number, step: number, attempts: readonly string[]): StepNode {
+  return {
+    kind: 'step' as const,
+    id,
+    turn,
+    step,
+    status: 'ok' as const,
+    startSeq: 1,
+    endSeq: 4,
+    startTime: 1000,
+    endTime: 2000,
+    inputSeq: 4,
+    attempts: attempts.map((attemptId, index) => ({
+      id: attemptId, attempt: index + 1, inputSeq: 4, outputSeq: 4, status: 'ok' as const,
+    })),
+    tools: [],
+  }
+}
+
 const oneTurn = state([{
   kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 4, startTime: 1000, endTime: 2000,
   items: [step([{ id: 'attempt:1:1:1', status: 'ok', usage: { inputTokens: 1, outputTokens: 100, totalTokens: 103 } }])],
@@ -263,6 +283,76 @@ describe('trace console', () => {
     }
   })
 
+  it('opens on the first content row in reading mode', async () => {
+    const { observers, restore } = measured()
+    const getNode = vi.fn(async () => ({ ok: true as const, value: attemptDetail() }))
+    const view = mount(session(oneTurn), getNode, async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    try {
+      await act(async () => { await Promise.resolve() })
+      // A turn is a grouping row; the default lands on step 1's first call.
+      expect(rowOf(view.host, 'attempt:1:1:1')?.getAttribute('data-current')).toBe('true')
+      expect(rowOf(view.host, 'step:1:1')?.getAttribute('data-current')).toBe('true')
+      expect(rowOf(view.host, 'turn:1')?.getAttribute('data-current')).toBeNull()
+      expect(getNode).toHaveBeenCalledWith('sess', 'attempt:1:1:1')
+      expect(chipOf(view.host, 'turn:1')?.getAttribute('aria-current')).toBe('true')
+      await setWidths(view.host, observers, { panel: 1200 })
+      expect(view.host.querySelector('[data-view="reading"]')).not.toBeNull()
+      expect(view.host.querySelector('[data-view-toggle="reading"]')?.getAttribute('aria-pressed')).toBe('true')
+      expect(view.host.querySelector('[data-pane="detail"] [data-facts]')).not.toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
+  it('returns to the row a round was left on and opens a fresh round on its first call', async () => {
+    const track = state([
+      {
+        kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 6, startTime: 1000, endTime: 2000,
+        items: [calls('step:1:1', 1, 1, ['attempt:1:1:1', 'attempt:1:1:2'])],
+      },
+      {
+        kind: 'turn', id: 'turn:2', turn: 2, status: 'ok', startSeq: 7, endSeq: 12, startTime: 3000, endTime: 4000,
+        items: [calls('step:2:1', 2, 1, ['attempt:2:1:1', 'attempt:2:1:2'])],
+      },
+    ])
+    const getNode = vi.fn(async () => ({ ok: true as const, value: attemptDetail() }))
+    const view = mount(session(track), getNode, async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+    const isCurrent = (nodeId: string) => rowOf(view.host, nodeId)?.getAttribute('data-current') === 'true'
+
+    // Round 1 opens on its first call, not on the retry that closed the step.
+    expect(chipOf(view.host, 'turn:1')?.getAttribute('aria-current')).toBe('true')
+    expect(isCurrent('attempt:1:1:1')).toBe(true)
+    expect(getNode).toHaveBeenCalledWith('sess', 'attempt:1:1:1')
+
+    // A row the user opens is what this round remembers.
+    await click(labelOf(view.host, 'attempt:1:1:2'))
+    await act(async () => { await Promise.resolve() })
+    expect(getNode).toHaveBeenCalledWith('sess', 'attempt:1:1:2')
+
+    // Round 2 has never been opened, so it lands on its own first call.
+    await click(chipOf(view.host, 'turn:2'))
+    await act(async () => { await Promise.resolve() })
+    expect(chipOf(view.host, 'turn:2')?.getAttribute('aria-current')).toBe('true')
+    expect(isCurrent('attempt:2:1:1')).toBe(true)
+    expect(getNode).toHaveBeenCalledWith('sess', 'attempt:2:1:1')
+
+    await click(labelOf(view.host, 'attempt:2:1:2'))
+    await act(async () => { await Promise.resolve() })
+
+    // Switching back returns to the row each round was left on.
+    await click(chipOf(view.host, 'turn:1'))
+    await act(async () => { await Promise.resolve() })
+    expect(isCurrent('attempt:1:1:2')).toBe(true)
+    expect(getNode).toHaveBeenLastCalledWith('sess', 'attempt:1:1:2')
+    await click(chipOf(view.host, 'turn:2'))
+    await act(async () => { await Promise.resolve() })
+    expect(isCurrent('attempt:2:1:2')).toBe(true)
+    expect(getNode).toHaveBeenLastCalledWith('sess', 'attempt:2:1:2')
+  })
+
   it('reads the header figures and the band ingredients without repeating the basis', async () => {
     const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
     roots.push(view.root)
@@ -378,7 +468,8 @@ describe('trace console', () => {
     await act(async () => { await Promise.resolve() })
 
     const first = chipOf(view.host, 'turn:1')
-    expect(first?.getAttribute('aria-current')).not.toBe('true')
+    // The panel opens on the first content row, so the first round is current.
+    expect(first?.getAttribute('aria-current')).toBe('true')
     expect(first?.textContent).toContain('turn 1')
     expect(first?.textContent).toContain(zh.summaryTurn.replace('{n}', '1'))
     expect(first?.querySelector('[data-chip-stat="elapsed"]')?.textContent).toContain(zh.elapsed)
@@ -387,29 +478,37 @@ describe('trace console', () => {
     expect(first?.querySelector('[data-chip-stat="total"]')?.textContent).toContain('103')
 
     const second = chipOf(view.host, 'turn:2')
+    expect(second?.getAttribute('aria-current')).not.toBe('true')
     expect(second?.textContent).toContain('turn 2')
     expect(second?.textContent).toContain(zh.summaryTools.replace('{n}', '1'))
     expect(second?.querySelector('[data-chip-stat="elapsed"]')?.textContent).toContain('2 s')
     expect(second?.querySelector('[data-chip-stat="total"]')?.textContent).toContain('910')
   })
 
-  it('expands and collapses the current tree row with the arrow keys', async () => {
+  it('starts fully expanded and collapses the current row with the arrow keys', async () => {
     const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: attemptDetail() })), async () => ({ ok: true as const, value: bill() }))
     roots.push(view.root)
     await act(async () => { await Promise.resolve() })
     const shell = panel(view.host)
+    const tree = treePane(view.host)
     const press = async (key: string) => {
       await act(async () => { shell.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })) })
     }
-    expect(view.host.textContent).not.toContain('step 1')
-    await press('ArrowRight')
-    expect(view.host.textContent).toContain('step 1')
-    await press('ArrowDown')
-    await press('ArrowRight')
-    expect(view.host.textContent).toContain('llm_call 1')
+    // Every level paints open, and the default selection lands on step 1's first call.
+    expect(tree.textContent).toContain('step 1')
+    expect(tree.textContent).toContain('llm_call 1')
+    expect(rowOf(view.host, 'attempt:1:1:1')?.getAttribute('data-current')).toBe('true')
+    // One step up from the call reaches its step, then the arrows fold each level.
+    await press('ArrowUp')
     await press('ArrowLeft')
-    expect(treePane(view.host).textContent).not.toContain('llm_call 1')
-    expect(treePane(view.host).textContent).toContain('step 1')
+    expect(tree.textContent).not.toContain('llm_call 1')
+    await press('ArrowRight')
+    expect(tree.textContent).toContain('llm_call 1')
+    await press('ArrowUp')
+    await press('ArrowLeft')
+    expect(tree.textContent).not.toContain('step 1')
+    await press('ArrowRight')
+    expect(tree.textContent).toContain('step 1')
   })
 
   it('opens the latest attempt from a step and keeps the failed attempt selectable', async () => {
@@ -594,7 +693,8 @@ describe('trace console', () => {
     expect(band?.textContent).not.toContain(zh.title)
     expect(band?.textContent).not.toContain(zh.titleExcluded)
     expect(band?.textContent).not.toContain(zh.titleMissing)
-    expect(getNode).not.toHaveBeenCalled()
+    // Only the default selection (the sole content row) reads this node; the band stays out.
+    expect(getNode.mock.calls).toEqual([['sess', 'side:title']])
   })
 
   it('copies the full decimal when the header total is abbreviated', async () => {
@@ -631,6 +731,13 @@ describe('trace console', () => {
     expect(view.host.querySelector('[data-band-panel]')).toBeNull()
     expect(view.host.querySelector('[data-compose-bar]')).not.toBeNull()
     expect(view.host.querySelector('[data-legend]')).not.toBeNull()
+    // One disclosure only: a filled, caret-marked control in the header.
+    const toggle = bandToggle(view.host) as HTMLButtonElement
+    expect(view.host.querySelectorAll('[data-band-toggle]')).toHaveLength(1)
+    expect(toggle.textContent).toContain(zh.bandTitle)
+    expect(toggle.getAttribute('title')).toBe(zh.bandExpand)
+    expect(toggle.querySelector('.dsh-context-track-head-band-icon')).not.toBeNull()
+    expect(toggle.textContent).toContain('▾')
     await expandBand(view.host)
     expect(band.getAttribute('data-band')).toBe('open')
     expect(view.host.querySelector('[data-band-panel]')).not.toBeNull()
@@ -639,7 +746,27 @@ describe('trace console', () => {
     expect(view.host.querySelector('[data-block="compose"] > h3')).toBeNull()
     expect(view.host.querySelector('[data-block="timing"]')).not.toBeNull()
     expect(view.host.querySelector('[data-block="side"]')).not.toBeNull()
-    expect(view.host.querySelector('[data-band-toggle]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(bandToggle(view.host)?.getAttribute('aria-expanded')).toBe('true')
+    expect(bandToggle(view.host)?.getAttribute('title')).toBe(zh.bandCollapse)
+  })
+
+  it('names the largest bar segments in the legend before folding the rest', async () => {
+    const report = bill()
+    report.window.categories = [
+      { id: 'system', tokens: 1580 },
+      { id: 'skill', tokens: 1245 },
+      { id: 'history', tokens: 1960 },
+      { id: 'injection', tokens: 325 },
+      { id: 'user', tokens: 60 },
+      { id: 'tool-results', tokens: 5200 },
+      { id: 'tools', tokens: 4800 },
+    ]
+    const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: report }))
+    roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
+    const legend = [...view.host.querySelectorAll('[data-legend-list] [data-legend]')]
+    expect(legend.map(item => item.getAttribute('data-legend'))).toEqual(['tool-results', 'tools', 'history', 'system'])
+    expect(view.host.querySelector('[data-legend-more]')?.textContent).toBe('+3')
   })
 
   it('opens the header more menu, runs an action, and closes it with Escape', async () => {
@@ -675,6 +802,14 @@ describe('trace console', () => {
     expect(timing.querySelector('[data-time="first"]')?.textContent).toContain('800 ms')
     expect(timing.querySelectorAll('[data-time-bar] > [data-time-seg]')).toHaveLength(3)
     expect(timing.querySelector('[data-time-seg="think"]')?.getAttribute('style')).toContain('flex-grow: 400')
+    // The colored bar is opaque on its own: each segment is named with its duration beside it.
+    const legend = [...timing.querySelectorAll('[data-time-legend] [data-time-key]')]
+    expect(legend.map(item => item.getAttribute('data-time-key'))).toEqual(['wait', 'think', 'rest'])
+    expect(timing.querySelector('[data-time-key="wait"]')?.textContent).toContain(zh.wait)
+    expect(timing.querySelector('[data-time-key="wait"]')?.textContent).toContain('900 ms')
+    expect(timing.querySelector('[data-time-key="think"]')?.textContent).toContain('400 ms')
+    expect(timing.querySelector('[data-time-key="rest"]')?.textContent).toContain(zh.timingRest)
+    expect(timing.querySelector('[data-time-key="rest"]')?.textContent).toContain('1.9 s')
   })
 
   it('explains an empty sidecar card instead of leaving it blank', async () => {
@@ -1144,13 +1279,15 @@ describe('trace console', () => {
     expect(turnRow.getAttribute('data-depth')).toBe('0')
     await openRow(view.host, 'turn:1')
     const stepRow = rowOf(view.host, 'step:1:1') as HTMLElement
-    expect(stepRow.querySelector('[data-summary]')?.textContent).toContain('1')
     expect(Number(stepRow.getAttribute('data-depth'))).toBeGreaterThan(0)
     const arrow = chevronOf(view.host, 'step:1:1') as HTMLButtonElement
-    expect(arrow.getAttribute('aria-label')).toBe(zh.expand)
-    expect(arrow.textContent).not.toContain(zh.expand)
+    // Step rows paint open, so the summary only appears once the row is folded.
+    expect(arrow.getAttribute('aria-label')).toBe(zh.collapse)
+    expect(stepRow.querySelector('[data-summary]')).toBeNull()
     await click(arrow)
-    expect(rowOf(view.host, 'step:1:1')?.querySelector('[data-summary]')).toBeNull()
+    expect(rowOf(view.host, 'step:1:1')?.querySelector('[data-summary]')?.textContent).toContain('1')
+    expect(chevronOf(view.host, 'step:1:1')?.getAttribute('aria-label')).toBe(zh.expand)
+    expect(arrow.textContent).not.toContain(zh.expand)
     expect(traceCss).toContain('@container tree (max-width: 359px)')
     expect(traceCss).toContain('@container tree (max-width: 299px)')
     expect(traceCss).toMatch(/\[data-row-kind="turn"\] \{[^}]*position: sticky/)
@@ -1459,18 +1596,21 @@ describe('trace console', () => {
     await act(async () => { await Promise.resolve() })
     const turnRow = rowOf(view.host, 'turn:1') as HTMLElement
     const arrow = chevronOf(view.host, 'turn:1') as HTMLButtonElement
-    expect(arrow.getAttribute('aria-label')).toBe(zh.expand)
+    // The tree paints expanded, so the control offers the collapse action first.
+    expect(arrow.getAttribute('aria-label')).toBe(zh.collapse)
     expect(arrow.textContent).not.toContain(zh.expand)
     expect(turnRow.querySelector('.dsh-context-track-label')?.textContent).toContain('turn 1')
     await click(arrow)
-    expect(view.host.textContent).toContain('step 1')
+    expect(treePane(view.host).textContent).not.toContain('step 1')
+    expect(chevronOf(view.host, 'turn:1')?.getAttribute('aria-label')).toBe(zh.expand)
+    await click(arrow)
+    expect(treePane(view.host).textContent).toContain('step 1')
     await click(labelOf(view.host, 'step:1:1'))
     const stepRow = rowOf(view.host, 'step:1:1') as HTMLElement
     expect(stepRow.getAttribute('data-current')).toBe('true')
     expect(stepRow.querySelector('.dsh-context-track-label')?.textContent).toContain('deepseek-flash')
     expect(stepRow.querySelector('[data-column="tokens"]')?.textContent).not.toContain('deepseek-flash')
     expect(stepRow.querySelector('[data-column="tokens"]')?.textContent).toContain('→')
-    await click(chevronOf(view.host, 'step:1:1') as HTMLButtonElement)
     const toolRow = rowOf(view.host, 'tool:1') as HTMLElement
     const sideRow = rowOf(view.host, 'side:1') as HTMLElement
     const attemptRow = rowOf(view.host, 'attempt:1:1:1') as HTMLElement

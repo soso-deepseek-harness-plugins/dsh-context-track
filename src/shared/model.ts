@@ -216,9 +216,13 @@ export function isSubagentOrigin(header: { parentSession?: string; origin?: stri
   return header.origin === 'subagent' && typeof header.parentSession === 'string' && header.parentSession.length > 0
 }
 
-/** Unfinished turns start open. Everything else starts closed. The choice stays in the component. */
-export function defaultExpanded(kind: string, status: NodeStatus): boolean {
-  return kind === 'turn' && status === 'running'
+/**
+ * Every row starts open so the whole call tree is readable at first paint.
+ * The choice stays in the component; a user collapse survives until a later
+ * node is opened with the chevron.
+ */
+export function defaultExpanded(_kind: string, _status: NodeStatus): boolean {
+  return true
 }
 
 /** An external child has no local log, so the tree does not offer a chevron. */

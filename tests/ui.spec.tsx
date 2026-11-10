@@ -138,11 +138,14 @@ describe('trace panel', () => {
     expect(host.textContent).toContain('turn 1')
     expect(host.querySelector('.dsh-context-track-main')).not.toBeNull()
     expect(panel(host)).not.toBeNull()
+    // The default selection reads the first content row, so node reads already started.
+    const reads = getNode.mock.calls.length
+    expect(reads).toBeGreaterThan(0)
 
     list.byId.sess = { id: 'sess', retainedBy: {} }
     act(() => { root.render(<TraceMain {...props} />) })
     expect(host.textContent).toContain(zh.empty)
-    expect(getNode).not.toHaveBeenCalled()
+    expect(getNode.mock.calls.length).toBe(reads)
   })
 
   it('shows the empty state and does not request a node when no session is open', async () => {
@@ -177,16 +180,17 @@ describe('trace panel', () => {
     expect(getComputedStyle(turnLabel!).color).toBe('rgb(240, 240, 240)')
   })
 
-  it('hides a finished turn’s children without writing the projection', async () => {
+  it('paints the finished turn expanded without writing the projection', async () => {
     const track = structuredClone(finishedTurn)
     const getNode = vi.fn()
     const view = mount(page(session(track), getNode))
     roots.push(view.root)
-    expect(view.host.textContent).not.toContain('step 1')
-    await click(chevron(view.host, 'turn:1'))
+    // The tree opens fully expanded, so the step paints before any click.
     expect(view.host.textContent).toContain('step 1')
     await click(chevron(view.host, 'turn:1'))
     expect(view.host.textContent).not.toContain('step 1')
+    await click(chevron(view.host, 'turn:1'))
+    expect(view.host.textContent).toContain('step 1')
     expect(track).toEqual(finishedTurn)
   })
 
@@ -209,7 +213,7 @@ describe('trace panel', () => {
     })
     const view = mount(page(session(finishedTurn), getNode))
     roots.push(view.root)
-    await click(chevron(view.host, 'turn:1'))
+    // The tree already paints the step open; selecting it opens the narrow overlay.
     await click(label(view.host, 'step:1:1'))
     expect(view.host.textContent).toContain('turn 1')
     expect(view.host.textContent).toContain(zh.missing)
@@ -251,7 +255,6 @@ describe('trace panel', () => {
     const view = mount(page(session(finishedTurn), vi.fn(async () => ({ ok: true as const, value: attempt }))))
     roots.push(view.root)
     view.host.style.cssText = 'display:flex;flex-direction:column;height:160px;overflow:hidden;'
-    await click(chevron(view.host, 'turn:1'))
     await click(label(view.host, 'step:1:1'))
     await act(async () => { await Promise.resolve() })
     expect(view.host.textContent).not.toContain('tail-marker')
@@ -264,6 +267,8 @@ describe('trace panel', () => {
     expect(getComputedStyle(tree).minHeight).not.toBe('auto')
     expect(traceCss).toMatch(/\.dsh-context-track \{[^}]*overflow:\s*hidden/)
     expect(traceCss).toMatch(/\.dsh-context-track-detail \{[^}]*overflow:\s*auto/)
+    // The detail column keeps a zero flex basis so wide JSON cannot resize the split.
+    expect(traceCss).toMatch(/\.dsh-context-track-detail \{[^}]*flex:\s*1 1 0/)
     expect(view.host.textContent).toContain('turn 1')
     expect(view.host.textContent).toContain('tail-marker')
     tree.scrollTop = 15
@@ -282,7 +287,6 @@ describe('trace panel', () => {
     const list = session(finishedTurn)
     const view = mount(page(list, getNode))
     roots.push(view.root)
-    await click(chevron(view.host, 'turn:1'))
     await click(label(view.host, 'step:1:1'))
     await act(async () => { await Promise.resolve() })
     expect(getNode).toHaveBeenCalledWith('sess', 'attempt:1:1:1')

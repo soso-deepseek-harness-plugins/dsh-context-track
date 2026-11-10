@@ -38,9 +38,8 @@ export interface TreeProps {
   open: Readonly<Record<string, boolean>>
   onToggle: (key: string, kind: string, status: NodeStatus) => void
   selected: { sessionId: string; nodeId: string } | undefined
-  onSelect: (sessionId: string, nodeId: string) => void
-  onActivate?: (cursor: TreeCursor) => void
-  onAttempt?: (attemptId: string) => void
+  /** The whole cursor, so the parent can key a round's remembered row off the same row. */
+  onSelect: (cursor: TreeCursor) => void
   t: (key: TrackKey) => string
   now?: number
   /** When set, rows that are not this kind drop out of the tree. Turns stay. */
@@ -75,7 +74,7 @@ export function Tree(props: TreeProps): ReactNode {
         </div>
       ) : null}
       {track.root.map(node => (
-        <RootRow key={`${props.sessionId}:${node.id}`} node={node} {...props} />
+        <RootRow key={`${props.sessionId}:${node.id}`} {...props} node={node} />
       ))}
     </div>
   )
@@ -119,7 +118,7 @@ function TurnRow({ node, ...props }: TreeProps & { node: TurnNode }): ReactNode 
       {expanded ? (
         <div className="dsh-context-track-children" style={guideStyle(nest(props))}>
           {node.items.map(item => (
-            <ItemRow key={item.id} item={item} origin={origin} {...props} depth={nest(props) + 1} parentTurnId={node.id} />
+            <ItemRow key={item.id} {...props} item={item} origin={origin} depth={nest(props) + 1} parentTurnId={node.id} />
           ))}
         </div>
       ) : null}
@@ -139,7 +138,7 @@ function StepRow({
 }: TreeProps & { origin?: number; node: StepNode }): ReactNode {
   if (!rowVisible('step', undefined, props.filter)) return null
   const key = rowKey(props.sessionId, node.id)
-  const expanded = props.open[key] ?? false
+  const expanded = props.open[key] ?? defaultExpanded('step', node.status)
   const depth = nest(props)
   const latest = node.attempts[node.attempts.length - 1]
   const target = latest?.id ?? node.id
@@ -179,17 +178,17 @@ function StepRow({
             if (entry.kind === 'attempt') {
               if (!rowVisible('attempt', undefined, props.filter)) return null
               return (
-                <AttemptRow key={entry.attempt.id} attempt={entry.attempt} {...props} depth={depth + 1} />
+                <AttemptRow key={entry.attempt.id} {...props} attempt={entry.attempt} depth={depth + 1} />
               )
             }
             if (entry.kind === 'search') {
               if (!rowVisible('sidecar', entry.search.purpose, props.filter)) return null
-              return <SidecarRow key={entry.search.id} node={entry.search} {...props} depth={depth + 1} />
+              return <SidecarRow key={entry.search.id} {...props} node={entry.search} depth={depth + 1} />
             }
             if (!rowVisible('tool', undefined, props.filter)) return null
             const tool = entry.tool
             const childKey = rowKey(props.sessionId, tool.id)
-            const childOpen = props.open[childKey] ?? false
+            const childOpen = props.open[childKey] ?? defaultExpanded('tool', tool.status)
             const expandable = tool.childSessionId !== undefined && childExpandable(tool.childMode)
             const childTrack = expandable && tool.childSessionId !== undefined ? props.trackOf(tool.childSessionId) : undefined
             const shown = displayStatus(tool.status, childTrack)
@@ -218,7 +217,7 @@ function StepRow({
                   <div className="dsh-context-track-children" style={guideStyle(depth + 1)}>
                     {(tool.searches ?? []).map(search => (
                       rowVisible('sidecar', search.purpose, props.filter)
-                        ? <SidecarRow key={search.id} node={search} {...props} depth={depth + 2} />
+                        ? <SidecarRow key={search.id} {...props} node={search} depth={depth + 2} />
                         : null
                     ))}
                   </div>
@@ -308,7 +307,7 @@ function SidecarRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'sideca
 
 function UnlinkedRow(props: TreeProps & { node: Extract<TurnItem, { kind: 'unlinked' }> | Extract<RootNode, { kind: 'unlinked' }> }): ReactNode {
   const key = rowKey(props.sessionId, props.node.id)
-  const expanded = props.open[key] ?? false
+  const expanded = props.open[key] ?? defaultExpanded('unlinked', 'ok')
   const expandable = childExpandable(props.node.childMode)
   const childTrack = expandable ? props.trackOf(props.node.childSessionId) : undefined
   const cursor: TreeCursor = {
@@ -462,9 +461,7 @@ function displayStatus(status: NodeStatus, child: TrackState | undefined): NodeS
 }
 
 function activate(props: TreeProps, cursor: TreeCursor): void {
-  props.onSelect(props.sessionId, cursor.activateId)
-  if (cursor.attemptId !== undefined) props.onAttempt?.(cursor.attemptId)
-  props.onActivate?.(cursor)
+  props.onSelect(cursor)
 }
 
 function nest(props: { depth?: number }): number {
@@ -606,7 +603,7 @@ function pushItem(
     if (!rowVisible('unlinked', undefined, filter)) return
     const key = rowKey(sessionId, item.id)
     const expandable = childExpandable(item.childMode)
-    const expanded = open[key] ?? false
+    const expanded = open[key] ?? defaultExpanded('unlinked', 'ok')
     rows.push({
       sessionId, nodeId: item.id, key, kind: 'unlinked', status: 'ok', expandable, activateId: item.id,
     })
@@ -615,7 +612,7 @@ function pushItem(
   }
   if (!rowVisible('step', undefined, filter)) return
   const key = rowKey(sessionId, item.id)
-  const expanded = open[key] ?? false
+  const expanded = open[key] ?? defaultExpanded('step', item.status)
   const latest = item.attempts[item.attempts.length - 1]
   const canExpand = item.attempts.length > 0 || item.tools.length > 0 || (item.searches?.length ?? 0) > 0
   rows.push({
@@ -644,7 +641,7 @@ function pushItem(
     if (!rowVisible('tool', undefined, filter)) continue
     const childKey = rowKey(sessionId, entry.tool.id)
     const expandable = entry.tool.childSessionId !== undefined && childExpandable(entry.tool.childMode)
-    const childOpen = open[childKey] ?? false
+    const childOpen = open[childKey] ?? defaultExpanded('tool', entry.tool.status)
     rows.push({
       sessionId, nodeId: entry.tool.id, key: childKey, kind: 'tool', status: entry.tool.status,
       expandable, activateId: entry.tool.id,

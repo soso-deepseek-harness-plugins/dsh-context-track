@@ -31,6 +31,10 @@ export const traceCss = `
   --dsh-hit-high: light-dark(#15803d, #4ade80);
   --dsh-hit-mid: light-dark(#a16207, #facc15);
   --dsh-hit-low: light-dark(#b91c1c, #f87171);
+  /* The timing bar is its own scale: wait, think, and the remainder. */
+  --dsh-time-wait: light-dark(#a16207, #facc15);
+  --dsh-time-think: light-dark(#7e22ce, #c084fc);
+  --dsh-time-rest: color-mix(in srgb, var(--dsw-alias-label-tertiary) 45%, transparent);
   --dsh-json-key: light-dark(#0451a5, #9cdcfe);
   --dsh-json-string: light-dark(#a31515, #ce9178);
   --dsh-json-number: light-dark(#098658, #b5cea8);
@@ -160,12 +164,45 @@ export const traceCss = `
   white-space: nowrap;
   cursor: pointer;
 }
+/* Filled, bordered, and caret-marked: the band disclosure must read as a
+   control among the header's plain figures, not as another caption. */
+.dsh-context-track-head-band {
+  gap: 0.28rem;
+  padding: 0.14rem 0.45rem 0.14rem 0.4rem;
+  border-color: color-mix(in srgb, var(--dsw-alias-label-tertiary) 45%, transparent);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 550;
+  transition: background 140ms ease, border-color 140ms ease;
+}
 .dsh-context-track-head-band:hover,
 .dsh-context-track-more-button:hover,
 .dsh-context-track-more-button[aria-expanded="true"] {
   color: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-head-band[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 70%, transparent);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-head-band-icon {
+  flex: 0 0 auto;
+  width: 0.72rem;
+  height: 0.72rem;
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-context-track-head-band:hover .dsh-context-track-head-band-icon,
+.dsh-context-track-head-band[aria-expanded="true"] .dsh-context-track-head-band-icon {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-context-track-head-band-caret {
+  font-size: 0.56rem;
+  line-height: 1;
+  transition: transform 140ms ease;
+}
+.dsh-context-track-head-band[aria-expanded="true"] .dsh-context-track-head-band-caret {
+  transform: rotate(180deg);
 }
 .dsh-context-track-more-caret {
   font-size: 0.58rem;
@@ -430,20 +467,6 @@ export const traceCss = `
   color: var(--dsw-alias-label-tertiary);
   font-size: 0.66rem;
 }
-.dsh-context-track-band-toggle {
-  flex: 0 0 auto;
-  display: inline-grid;
-  place-items: center;
-  width: 1.1rem;
-  height: 1.1rem;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 0.6rem;
-}
-.dsh-context-track-band-toggle:hover {
-  color: var(--dsw-alias-label-primary);
-}
 .dsh-context-track-band-panel {
   box-sizing: border-box;
   display: grid;
@@ -508,10 +531,37 @@ export const traceCss = `
   height: 100%;
   border-radius: 999px;
 }
-.dsh-context-track-timing-bar [data-time-seg="wait"] { background: var(--dsh-cat-history); }
-.dsh-context-track-timing-bar [data-time-seg="think"] { background: var(--dsh-cat-system); }
-.dsh-context-track-timing-bar [data-time-seg="rest"] {
-  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 32%, transparent);
+.dsh-context-track-timing-bar [data-time-seg="wait"] { background: var(--dsh-time-wait); }
+.dsh-context-track-timing-bar [data-time-seg="think"] { background: var(--dsh-time-think); }
+.dsh-context-track-timing-bar [data-time-seg="rest"] { background: var(--dsh-time-rest); }
+.dsh-context-track-timing-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.7rem;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 0.68rem;
+}
+.dsh-context-track-timing-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  white-space: nowrap;
+}
+.dsh-context-track-timing-legend-item i {
+  flex: 0 0 auto;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 2px;
+  background: var(--dsh-time-rest);
+}
+.dsh-context-track-timing-legend-item[data-time-key="wait"] i { background: var(--dsh-time-wait); }
+.dsh-context-track-timing-legend-item[data-time-key="think"] i { background: var(--dsh-time-think); }
+.dsh-context-track-timing-legend-item b {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
 }
 .dsh-context-track-timing-grid {
   display: grid;
@@ -655,7 +705,10 @@ export const traceCss = `
   border-inline-end: 1px solid var(--dsw-alias-border-l2);
 }
 .dsh-context-track-detail {
-  flex: 1 1 auto;
+  /* Zero basis keeps the column width on the split ratio. An auto basis grows
+     to the JSON pane's max-content and shoves the call tree sideways whenever
+     the reading/JSON switch changes the widest line. */
+  flex: 1 1 0;
   min-width: 320px;
   background: var(--dsw-alias-bg-base);
 }
@@ -874,6 +927,8 @@ export const traceCss = `
 /* Narrow headers keep the colored number but drop its label so the chrome still fits. */
 .dsh-context-track:not([data-tier="wide"]):not([data-tier="compact"]) .dsh-context-track-head .dsh-context-track-hit-label { display: none; }
 .dsh-context-track[data-tier="dense"] .dsh-context-track-head { padding: 0.2rem 0.5rem; gap: 0.35rem; }
+/* The dense header keeps the label and the caret; the mark yields the space. */
+.dsh-context-track[data-tier="dense"] .dsh-context-track-head-band-icon { display: none; }
 
 /* Narrow panels: the tree is full width and the detail is an overlay. */
 .dsh-context-track:not([data-tier="wide"]):not([data-tier="compact"]) .dsh-context-track-tree {

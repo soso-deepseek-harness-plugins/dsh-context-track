@@ -15,8 +15,10 @@ function sources(dir: string): string[] {
 describe('client', () => {
   it('keeps expansion in component state and leaves the projection untouched', () => {
     const track = emptyTrack()
+    // The tree starts fully open, so any row's fallback is expanded.
     expect(defaultExpanded('turn', 'running')).toBe(true)
-    expect(defaultExpanded('turn', 'ok')).toBe(false)
+    expect(defaultExpanded('turn', 'ok')).toBe(true)
+    expect(defaultExpanded('step', 'ok')).toBe(true)
     const open = toggleExpanded({}, 'sess:turn:1', false)
     expect(open).toEqual({ 'sess:turn:1': true })
     expect(toggleExpanded(open, 'sess:turn:1', false)).toEqual({ 'sess:turn:1': false })

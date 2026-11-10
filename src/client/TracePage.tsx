@@ -22,6 +22,7 @@ import {
   toggleExpanded,
   type RootNode,
   type SidecarNode,
+  type StepNode,
   type TrackState,
   type TurnNode,
 } from '../shared/model.js'
@@ -29,6 +30,7 @@ import '../shared/projection.js'
 import type { TurnReport } from '../shared/report.js'
 import { Detail } from './Detail.js'
 import { abbreviate, copyText, formatDuration, type ShownNumber } from './format.js'
+import { BandIcon } from './Icon.js'
 import {
   DEFAULT_TREE_RATIO,
   GRIP_STEP_PX,
@@ -104,6 +106,18 @@ interface NodeSelection {
 }
 
 /**
+ * What a round tab comes back to: the row that round was last opened on.
+ * `nodeId` is the node the inspector reads, `key` the tree row that carries
+ * the cursor, and `attemptId` the call the turn report windows on.
+ */
+interface TurnMark {
+  sessionId: string
+  nodeId: string
+  key: string
+  attemptId: string
+}
+
+/**
  * Centre-column page for the left-sidebar row. The row's panel has no session
  * binding, so the console follows the retained main session.
  */
@@ -147,6 +161,10 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   })
   const [focusCategory, setFocusCategory] = useState<CategoryId | undefined>(undefined)
   const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  /* Session whose first content row has already been selected by default. */
+  const autoSelected = useRef<string | undefined>(undefined)
+  /* Last row the user opened in each round, so a tab switch returns to it. */
+  const marks = useRef<Record<string, TurnMark>>({})
 
   const narrow = !isSideBySide(tier)
   const pickedTurn = turns.find(turn => turn.id === picked)
@@ -166,6 +184,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     setEventSeq(undefined)
     setActiveKey(undefined)
     setFocusCategory(undefined)
+    marks.current = {}
   }, [sessionId])
 
   useEffect(() => () => { clearTimeout(revealTimer.current) }, [])
@@ -290,10 +309,21 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     }
   }
 
+  /** Remember what a round was left on. A tab switch comes back to this row. */
+  const markRow = (turnId: string | undefined, mark: TurnMark | undefined): void => {
+    if (turnId !== undefined && mark !== undefined) marks.current[turnId] = mark
+  }
+
+  /** Point the tree cursor and the inspector at one row. */
+  const showRow = (mark: TurnMark): void => {
+    setMarker(undefined)
+    setNode({ sessionId: mark.sessionId, nodeId: mark.nodeId })
+    setActiveKey(mark.key)
+    setAttemptId(mark.attemptId)
+  }
+
   const selectCursor = (cursor: TreeCursor, pin: boolean) => {
     if (sessionId === undefined) return
-    setMarker(undefined)
-    setActiveKey(cursor.key)
     if (pin) {
       setPinned(true)
       setOverlayOpen(true)
@@ -302,15 +332,39 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     if (owner !== undefined) setPicked(owner)
     if (cursor.kind === 'turn') {
       lastTrigger.current = { kind: 'turn', id: cursor.nodeId }
-      setNode({ sessionId, nodeId: cursor.nodeId })
+      showRow({ sessionId, nodeId: cursor.nodeId, key: cursor.key, attemptId: '' })
       setDetail(undefined)
-      setAttemptId('')
+      markRow(owner, { sessionId, nodeId: cursor.nodeId, key: cursor.key, attemptId: '' })
       return
     }
     lastTrigger.current = { kind: 'node', id: cursor.nodeId }
-    setNode({ sessionId: cursor.sessionId, nodeId: cursor.activateId })
-    setAttemptId(cursor.attemptId ?? '')
+    const mark = {
+      sessionId: cursor.sessionId, nodeId: cursor.activateId, key: cursor.key, attemptId: cursor.attemptId ?? '',
+    }
+    showRow(mark)
+    markRow(owner, mark)
   }
+
+  /* Open on content, never on an empty grouping row. The round that opens first
+   * is the first one with items, so the panel lands where the loop began; a
+   * round only opens on its turn row when it has no steps or sidecars yet. The
+   * default does not pin the round, slide the narrow overlay, or count as a
+   * choice, so a later tab switch still opens on the first call. */
+  useEffect(() => {
+    if (sessionId === undefined) {
+      autoSelected.current = undefined
+      return
+    }
+    if (autoSelected.current === sessionId) return
+    if (picked !== undefined || node !== undefined || marker !== undefined) return
+    const round = turns.find(turn => turn.items.length > 0)
+    if (round === undefined) return
+    const entry = openingRow(sessionId, round)
+    if (entry === undefined) return
+    autoSelected.current = sessionId
+    setPicked(round.id)
+    showRow(entry)
+  }, [sessionId, picked, node, marker, turns])
 
   if (sessionId === undefined) {
     return <div className={rootClass} data-tier={tier}><p className="dsh-context-track-empty">{t('empty')}</p></div>
@@ -324,42 +378,70 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const hasSelection = node !== undefined || marker !== undefined
   const sideBySide = isSideBySide(tier)
   const showDetail = sideBySide ? detailOpen : overlayOpen && hasSelection
+  /* The band only exists for a turn, so its disclosure must not dangle on a sidecar mark. */
+  const bandAvailable = marker === undefined && shownReport !== undefined
   const headTotal = shownReport?.consumption.total ?? (selectedTurn !== undefined ? totalFigure(selectedTurn) : { basis: 'absent' as const })
   const headClock = shownReport?.timing.elapsed ?? (selectedTurn !== undefined ? clockFigure(selectedTurn) : { basis: 'absent' as const })
   const headHit = shownReport?.consumption.hitRate ?? (selectedTurn !== undefined ? hitFigure(selectedTurn) : { basis: 'absent' as const })
   const crumbs = crumbTrail(track, turns, node?.nodeId, marker, translate)
 
+  /** A remembered row survives while its node is still in that session's index. */
+  const stillThere = (mark: TurnMark): boolean => {
+    const index = trackOf(mark.sessionId)
+    return index !== undefined && findNode(index, mark.nodeId) !== undefined
+  }
+
+  /** A tab switch returns to the row the round was left on, else its first call. */
   const pinTurn = (id: string) => {
     lastTrigger.current = { kind: 'turn', id }
     setMarker(undefined)
     setPicked(id)
-    setNode({ sessionId, nodeId: id })
     setPinned(true)
-    setActiveKey(`${sessionId}:${id}`)
-    setAttemptId('')
+    const turn = turns.find(item => item.id === id)
+    const kept = turn === undefined ? undefined : marks.current[id]
+    const entry = turn === undefined
+      ? undefined
+      : (kept !== undefined && stillThere(kept) ? kept : undefined) ?? openingRow(sessionId, turn)
+    if (entry !== undefined) {
+      showRow(entry)
+    } else {
+      setNode({ sessionId, nodeId: id })
+      setActiveKey(`${sessionId}:${id}`)
+      setAttemptId('')
+    }
     if (sideBySide) openDetail()
   }
 
-  const selectNode = (ownerSession: string, nodeId: string) => {
-    lastTrigger.current = { kind: 'node', id: nodeId }
-    setMarker(undefined)
-    setNode({ sessionId: ownerSession, nodeId })
+  const selectNode = (cursor: TreeCursor) => {
+    lastTrigger.current = { kind: 'node', id: cursor.nodeId }
+    const mark = {
+      sessionId: cursor.sessionId, nodeId: cursor.activateId, key: cursor.key, attemptId: cursor.attemptId ?? '',
+    }
+    showRow(mark)
     setPinned(true)
     setDetailOpen(true)
     setDetailShown(true)
     setOverlayOpen(true)
-    const owner = turnContaining(turns, nodeId)
-    if (owner !== undefined) setPicked(owner)
+    const owner = turnContaining(turns, cursor.activateId) ?? turnContaining(turns, cursor.nodeId)
+    if (owner !== undefined) {
+      setPicked(owner)
+      markRow(owner, mark)
+    }
   }
 
   const chooseCrumb = (nodeId: string) => {
-    if (turns.some(turn => turn.id === nodeId)) {
-      setNode({ sessionId, nodeId })
-      setAttemptId('')
-      setMarker(undefined)
-      return
-    }
-    selectNode(sessionId, nodeId)
+    const mark = { sessionId, nodeId, key: `${sessionId}:${nodeId}`, attemptId: '' }
+    const turn = turns.some(item => item.id === nodeId)
+    lastTrigger.current = { kind: turn ? 'turn' : 'node', id: nodeId }
+    showRow(mark)
+    const owner = turnContaining(turns, nodeId)
+    if (owner !== undefined) markRow(owner, mark)
+    if (turn) return
+    setPinned(true)
+    setDetailOpen(true)
+    setDetailShown(true)
+    setOverlayOpen(true)
+    if (owner !== undefined) setPicked(owner)
   }
 
   const moveTurn = (delta: number) => {
@@ -408,16 +490,22 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
           <span className="dsh-context-track-head-label">{t('elapsed')}</span>
           <FigureView figure={headClock} t={translate} showBasis={false} format={formatDuration} />
         </span>
-        <button
-          type="button"
-          className="dsh-context-track-head-band"
-          data-head-band
-          aria-expanded={bandOpen}
-          aria-label={bandOpen ? t('bandCollapse') : t('bandExpand')}
-          onClick={() => { setBandOpen(value => !value) }}
-        >
-          {t('bandTitle')}
-        </button>
+        {bandAvailable ? (
+          <button
+            type="button"
+            className="dsh-context-track-head-band"
+            data-head-band
+            data-band-toggle
+            aria-expanded={bandOpen}
+            aria-label={bandOpen ? t('bandCollapse') : t('bandExpand')}
+            title={bandOpen ? t('bandCollapse') : t('bandExpand')}
+            onClick={() => { setBandOpen(value => !value) }}
+          >
+            <BandIcon />
+            <span className="dsh-context-track-head-band-label">{t('bandTitle')}</span>
+            <span className="dsh-context-track-head-band-caret" aria-hidden="true">▾</span>
+          </button>
+        ) : null}
         <MoreMenu
           t={translate}
           onExpandAll={() => { bulk(true) }}
@@ -459,7 +547,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 activeSeq={eventSeq}
                 trackOf={trackOf}
                 t={translate}
-                onToggle={() => { setBandOpen(value => !value) }}
                 onCategory={bandCategory}
                 onGap={seq => {
                   setEventSeq(seq)
@@ -471,6 +558,12 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                     setDetailOpen(true)
                     setDetailShown(true)
                     setOverlayOpen(true)
+                    const owner = turnContaining(turns, match.nodeId)
+                    if (owner !== undefined) {
+                      markRow(owner, {
+                        sessionId, nodeId: match.nodeId, key: `${sessionId}:${match.nodeId}`, attemptId: '',
+                      })
+                    }
                   }
                 }}
               />
@@ -492,11 +585,6 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 }}
                 selected={node}
                 onSelect={selectNode}
-                onActivate={cursor => {
-                  lastTrigger.current = { kind: 'node', id: cursor.nodeId }
-                  setActiveKey(cursor.key)
-                }}
-                onAttempt={id => { setAttemptId(id) }}
                 onBulk={(expand, keys) => { bulk(expand, keys) }}
                 t={translate}
                 now={Date.now()}
@@ -1006,6 +1094,27 @@ function crumbTrail(
   const side = turn.items.find(item => item.id === nodeId && item.kind === 'sidecar')
   if (side?.kind === 'sidecar') trail.push({ label: sidecarName(side.purpose, t) })
   return trail
+}
+
+/**
+ * The row a round opens on until the user picks one: the first model call of
+ * its first step, so a retried step still lands on call 1. A step that has not
+ * called yet opens on itself, and a round of sidecars opens on the first one.
+ */
+function openingRow(sessionId: string, turn: TurnNode): TurnMark | undefined {
+  const step = turn.items.find((item): item is StepNode => item.kind === 'step')
+  if (step !== undefined) {
+    const first = step.attempts[0]
+    if (first !== undefined) {
+      return { sessionId, nodeId: first.id, key: `${sessionId}:${first.id}`, attemptId: first.id }
+    }
+    return { sessionId, nodeId: step.id, key: `${sessionId}:${step.id}`, attemptId: '' }
+  }
+  const aside = turn.items.find(item => item.kind === 'sidecar' || item.kind === 'unlinked')
+  if (aside !== undefined) {
+    return { sessionId, nodeId: aside.id, key: `${sessionId}:${aside.id}`, attemptId: '' }
+  }
+  return undefined
 }
 
 function turnFor(turns: readonly TurnNode[], nodeId: string | undefined): TurnNode | undefined {

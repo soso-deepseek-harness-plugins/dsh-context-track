@@ -32,6 +32,25 @@ export function TraceTabTitle({ t }: { t: (key: TrackKey) => string }): ReactNod
   )
 }
 
+/**
+ * Stacked composition bars. The header disclosure uses it to look like a
+ * control instead of a caption, and to echo the make-up bar inside the band.
+ * @returns the icon.
+ */
+export function BandIcon(): ReactNode {
+  return (
+    <svg className="dsh-context-track-head-band-icon" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+      <g fill="currentColor">
+        <rect x="1.5" y="3" width="8" height="2.6" rx="1.3" />
+        <rect x="10.5" y="3" width="4" height="2.6" rx="1.3" opacity="0.55" />
+        <rect x="1.5" y="6.7" width="5" height="2.6" rx="1.3" opacity="0.8" />
+        <rect x="7.5" y="6.7" width="7" height="2.6" rx="1.3" opacity="0.5" />
+        <rect x="1.5" y="10.4" width="11" height="2.6" rx="1.3" opacity="0.7" />
+      </g>
+    </svg>
+  )
+}
+
 export type NodeGlyphKind = 'turn' | 'step' | 'attempt' | 'tool' | 'child' | 'sidecar' | 'unlinked'
 
 /** One 14px monochrome glyph per node kind. Inline so no icon package ships with the client. */
