@@ -636,6 +636,11 @@ export const traceCss = `
   min-width: 0;
   font-size: 0.74rem;
 }
+.dsh-context-track-side-group + .dsh-context-track-side-group {
+  margin-top: 0.55rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+}
 .dsh-context-track-side-group + .dsh-context-track-side-row,
 .dsh-context-track-side-row + .dsh-context-track-side-row {
   margin-top: 0.32rem;

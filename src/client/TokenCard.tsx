@@ -56,10 +56,15 @@ export function compactionPresent(report: TurnReport): boolean {
   return report.consumption.compaction.basis !== 'absent' || report.events.some(event => event.kind === 'compaction')
 }
 
+export function titlePresent(report: TurnReport): boolean {
+  return report.consumption.title !== undefined || report.events.some(event => event.kind === 'title')
+}
+
 export function ContextBand({
   report,
   open,
   activeSeq,
+  titleName,
   trackOf,
   t,
   onCategory,
@@ -68,6 +73,8 @@ export function ContextBand({
   report: TurnReport
   open: boolean
   activeSeq?: number
+  /** Adopted session name, read from the title sidecar when the log already has one. */
+  titleName?: string
   trackOf: (sessionId: string) => TrackState | undefined
   t: (key: TrackKey) => string
   onCategory: (id: CategoryId) => void
@@ -175,8 +182,33 @@ export function ContextBand({
           </section>
           <section data-block="side" className="dsh-context-track-band-block">
             <h3>{t('blockSide')}</h3>
-            {!compactionPresent(report) && report.subagents.length === 0 ? (
+            {!compactionPresent(report) && !titlePresent(report) && report.subagents.length === 0 ? (
               <p className="dsh-context-track-side-empty" data-side-empty>{t('sideEmpty')}</p>
+            ) : null}
+            {titlePresent(report) ? (
+              <div className="dsh-context-track-side-group" data-title>
+                <div className="dsh-context-track-side-row">
+                  <span className="dsh-context-track-side-label">{t('title')}</span>
+                  <span className="dsh-context-track-side-value" data-session-name>
+                    {titleName !== undefined && titleName.length > 0 ? titleName : t('titleMissing')}
+                  </span>
+                </div>
+                <p className="dsh-context-track-side-note">{t('titleExcluded')}</p>
+                <div className="dsh-context-track-side-links">
+                  {report.events.filter(event => event.kind === 'title').map(event => (
+                    <button
+                      key={event.seq}
+                      type="button"
+                      className="dsh-context-track-gap"
+                      data-seq={event.seq}
+                      data-active={activeSeq === event.seq ? 'true' : undefined}
+                      onClick={() => { onGap(event.seq) }}
+                    >
+                      {t('title')}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : null}
             {compactionPresent(report) ? (
               <div className="dsh-context-track-side-group" data-compaction>

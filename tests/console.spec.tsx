@@ -569,6 +569,7 @@ describe('trace console', () => {
     const report = bill()
     report.consumption.reasoning = { basis: 'absent' }
     report.consumption.title = { basis: 'usage', value: 12 }
+    report.events.push({ seq: 1, time: 900, kind: 'title', label: 'title', nodeId: 'side:title', inWindow: true })
     report.window.categories = [
       { id: 'user', tokens: 9 },
       { id: 'tools', tokens: 40 },
@@ -608,9 +609,11 @@ describe('trace console', () => {
     expect(view.host.querySelector('[data-stat="reasoning"]')).toBeNull()
     expect(bandPane(view.host)?.textContent).not.toContain(zh.reasoningBlock)
     expect(bandPane(view.host)?.textContent).not.toContain(zh.delta)
-    expect(bandPane(view.host)?.querySelector('[data-session-name]')).toBeNull()
-    expect(bandPane(view.host)?.textContent).not.toContain(zh.titleExcluded)
-    expect(bandPane(view.host)?.textContent).not.toContain('天气会话')
+    expect(bandPane(view.host)?.querySelector('[data-session-name]')?.textContent).toContain('天气会话')
+    const named = view.host.querySelector('[data-block="side"] [data-title]')
+    expect(named?.textContent).toContain(zh.title)
+    expect(named?.textContent).toContain(zh.titleExcluded)
+    expect(named?.querySelector('.dsh-context-track-gap')).not.toBeNull()
     expect(view.host.textContent).toContain('400 ms')
     const compaction = view.host.querySelector('[data-block="side"] [data-compaction]')
     expect(compaction?.textContent).toContain(zh.reclaimed)
@@ -673,9 +676,10 @@ describe('trace console', () => {
     expect(live.host.querySelector('[data-output="unseen"]')?.textContent).not.toContain('-')
   })
 
-  it('leaves session naming out of the turn bill', async () => {
+  it('lists session naming in the sidecars block but out of the turn bill', async () => {
     const report = bill()
     report.consumption.title = { basis: 'absent' }
+    report.events.push({ seq: 1, time: 900, kind: 'title', label: 'title', nodeId: 'side:title', inWindow: true })
     const track = state([{
       kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 2,
       items: [{ kind: 'sidecar', id: 'side:title', purpose: 'session-title', status: 'ok', requestSeq: 1 }],
@@ -689,12 +693,17 @@ describe('trace console', () => {
     await act(async () => { await Promise.resolve() })
     await expandBand(view.host)
     const band = bandPane(view.host)
-    expect(band?.querySelector('[data-session-name]')).toBeNull()
-    expect(band?.textContent).not.toContain(zh.title)
-    expect(band?.textContent).not.toContain(zh.titleExcluded)
-    expect(band?.textContent).not.toContain(zh.titleMissing)
-    // Only the default selection (the sole content row) reads this node; the band stays out.
-    expect(getNode.mock.calls).toEqual([['sess', 'side:title']])
+    const named = band?.querySelector('[data-block="side"] [data-title]')
+    expect(named).not.toBeNull()
+    expect(named?.querySelector('[data-session-name]')?.textContent).toContain(zh.titleMissing)
+    expect(named?.textContent).toContain(zh.title)
+    expect(named?.textContent).toContain(zh.titleExcluded)
+    // The naming call is still not part of the 103-token round bill.
+    expect(view.host.querySelector('[data-head="total"]')?.textContent).toContain('103')
+    await click(named?.querySelector('.dsh-context-track-gap') as HTMLButtonElement)
+    await act(async () => { await Promise.resolve() })
+    expect(getNode.mock.calls.every(call => call[0] === 'sess' && call[1] === 'side:title')).toBe(true)
+    expect(getNode.mock.calls.length).toBeGreaterThan(1)
   })
 
   it('copies the full decimal when the header total is abbreviated', async () => {
@@ -824,7 +833,7 @@ describe('trace console', () => {
     const side = view.host.querySelector('[data-block="side"]') as HTMLElement
     expect(side.querySelector('[data-compaction]')).toBeNull()
     expect(side.querySelector('[data-side-empty]')?.textContent).toBe(zh.sideEmpty)
-    expect(side.textContent).not.toContain(zh.title)
+    expect(side.querySelector('[data-title]')).toBeNull()
   })
 
   it('jumps from a band category to the matching input card', async () => {
@@ -1445,6 +1454,7 @@ describe('trace console', () => {
     })
     const view = mount(session(track), getNode, async () => ({ ok: true as const, value: bill() }))
     roots.push(view.root)
+    await act(async () => { await Promise.resolve() })
     await openRow(view.host, 'turn:1')
     await click(labelOf(view.host, 'side:compact'))
     await act(async () => { await Promise.resolve() })

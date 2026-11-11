@@ -150,6 +150,8 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
   const [eventSeq, setEventSeq] = useState<number | undefined>(undefined)
   const [detail, setDetail] = useState<NodeDetail | undefined>(undefined)
   const [report, setReport] = useState<TurnReport | MissingDetail | undefined>(undefined)
+  /* Adopted session name for the band. Keyed by sidecar so a turn switch never shows the previous name. */
+  const [title, setTitle] = useState<{ id: string; name?: string } | undefined>(undefined)
   const [detailOpen, setDetailOpen] = useState(true)
   const [detailShown, setDetailShown] = useState(true)
   /* Narrow panels slide the detail over the tree only after a click, never on an arrow-key move. */
@@ -270,6 +272,37 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
     }, showMissing)
     return () => { cancelled = true }
   }, [sessionId, turnId, attemptId, track, getTurn])
+
+  /* The band names the session beside the compaction and subagent rows, so the
+   * adopted title is read once per title sidecar rather than only when opened. */
+  const titleSidecar = selectedTurn?.items.find(
+    (item): item is SidecarNode => item.kind === 'sidecar' && item.purpose === 'session-title',
+  )
+  const titleSidecarId = titleSidecar?.id
+  const titleRevision = titleSidecar === undefined
+    ? ''
+    : `${titleSidecar.status}|${titleSidecar.outputSeq ?? ''}|${titleSidecar.endSeq ?? ''}`
+  const titleName = title !== undefined && title.id === titleSidecarId ? title.name : undefined
+  useEffect(() => {
+    if (sessionId === undefined || titleSidecarId === undefined) return undefined
+    let cancelled = false
+    let pending: Promise<RemoteResult<NodeDetail>>
+    try {
+      pending = Promise.resolve(getNode(sessionId, titleSidecarId))
+    } catch {
+      return () => { cancelled = true }
+    }
+    void pending.then(result => {
+      if (cancelled) return
+      if (result == null || typeof result !== 'object' || !('ok' in result) || result.ok !== true) return
+      const value = result.value
+      if (!isMissing(value) && value.kind === 'sidecar' && value.purpose === 'session-title'
+        && typeof value.output === 'string' && value.output.length > 0) {
+        setTitle({ id: titleSidecarId, name: value.output })
+      }
+    }, () => undefined)
+    return () => { cancelled = true }
+  }, [sessionId, titleSidecarId, titleRevision, getNode])
 
   const cursors = sessionId === undefined
     ? []
@@ -545,6 +578,7 @@ export function TracePage({ sessionId, useSessions, t, getNode, getTurn, host }:
                 report={shownReport}
                 open={bandOpen}
                 activeSeq={eventSeq}
+                titleName={titleName}
                 trackOf={trackOf}
                 t={translate}
                 onCategory={bandCategory}
