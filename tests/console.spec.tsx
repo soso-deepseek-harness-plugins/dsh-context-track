@@ -442,6 +442,14 @@ describe('trace console', () => {
     expect(current()).toBe('turn:1')
     await act(async () => { shell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     expect(view.host.querySelector('[data-turn-id="turn:1"][data-pinned="true"]')).not.toBeNull()
+    // The visible step buttons switch rounds and turn off at the ends.
+    const step = (name: 'prev' | 'next') => view.host.querySelector(`[data-strip-step="${name}"]`) as HTMLButtonElement
+    expect(step('prev').disabled).toBe(true)
+    await click(step('next'))
+    expect(current()).toBe('turn:2')
+    expect(step('next').disabled).toBe(true)
+    await click(step('prev'))
+    expect(current()).toBe('turn:1')
   })
 
   it('labels each round tab with its name, shape, and both numbers', async () => {
@@ -684,7 +692,7 @@ describe('trace console', () => {
       kind: 'turn', id: 'turn:1', turn: 1, status: 'ok', startSeq: 0, endSeq: 2,
       items: [{ kind: 'sidecar', id: 'side:title', purpose: 'session-title', status: 'ok', requestSeq: 1 }],
     }])
-    const getNode = vi.fn(async () => ({
+    const getNode = vi.fn(async (_session: string, _id: string) => ({
       ok: true as const,
       value: { kind: 'sidecar' as const, purpose: 'session-title' as const, status: 'ok', system: '', messages: [], route: '', maxTokens: 8 },
     }))
@@ -913,14 +921,18 @@ describe('trace console', () => {
     const report = bill()
     report.window.categories = [
       { id: 'injection', tokens: 37 },
-      { id: 'skill', tokens: 25 },
+      { id: 'skill', tokens: 39 },
       { id: 'user', tokens: 9 },
     ]
     report.window.injections = [
       { name: 'AGENTS.md', tokens: 25, calls: 2 },
       { name: 'plugin-context', tokens: 12, calls: 1 },
     ]
-    report.window.skills = [{ name: 'tdd', tokens: 25, calls: 1 }]
+    report.window.skills = [
+      { name: 'tdd', tokens: 25, calls: 1 },
+      { name: 'review', tokens: 10, calls: 1 },
+    ]
+    report.window.skillOverhead = 4
     const view = mount(session(oneTurn), vi.fn(), async () => ({ ok: true as const, value: report }))
     roots.push(view.root)
     await act(async () => { await Promise.resolve() })
@@ -948,6 +960,10 @@ describe('trace console', () => {
     expect(injection.textContent).toContain(zh.noMatch)
     const skill = band.querySelector('[data-compose] > [data-category="skill"]') as HTMLElement
     expect(skill.querySelector('[data-tool="tdd"]')?.textContent).toContain('25')
+    expect(skill.querySelector('[data-tool="review"]')?.textContent).toContain('10')
+    expect(skill.querySelector('[data-tool="tdd"]')?.textContent).not.toContain(zh.entries.replace('{n}', '1'))
+    expect(skill.querySelector('[data-overhead]')?.textContent).toContain(zh.skillOverhead)
+    expect(skill.querySelector('[data-overhead]')?.textContent).toContain('4')
     expect(skill.querySelector('input')?.getAttribute('aria-label')).toBe(zh.searchSkill)
     await click(skill.querySelector('button[aria-expanded]') as HTMLButtonElement)
     expect(skill.querySelector('[data-breakdown]')).toBeNull()
@@ -1299,7 +1315,14 @@ describe('trace console', () => {
     expect(arrow.textContent).not.toContain(zh.expand)
     expect(traceCss).toContain('@container tree (max-width: 359px)')
     expect(traceCss).toContain('@container tree (max-width: 299px)')
+    // Reading prose follows the card width; a fixed measure would leave a wide
+    // pane half empty, so no max-width belongs on the body.
+    expect(traceCss).toMatch(/\.dsh-context-track-prose \{[^}]*min-width: 0/)
+    expect(traceCss).not.toMatch(/\.dsh-context-track-prose \{[^}]*max-width/)
     expect(traceCss).toMatch(/\[data-row-kind="turn"\] \{[^}]*position: sticky/)
+    // The first added card owns a visible seam, not just a data attribute.
+    expect(traceCss).toMatch(/\.dsh-context-track-block\[data-new="true"\]/)
+    expect(traceCss).toContain('.dsh-context-track-new-badge')
   })
 
   it('renders markdown, clamps prose, and opens one message as JSON', async () => {
@@ -1408,6 +1431,58 @@ describe('trace console', () => {
     expect(json?.textContent).not.toContain('<skill_content>')
     await click(view.host.querySelector('[data-view-toggle="reading"]') as HTMLButtonElement)
     expect(pane.scrollTop).toBe(18)
+  })
+
+  it('keeps single newlines in message text', async () => {
+    const detail: NodeDetail = {
+      kind: 'attempt',
+      status: 'ok',
+      inputSeq: 3,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'first line\nsecond line' }] }],
+      tools: [],
+      toolHistory: { tools: [], updates: [] },
+      config: {},
+    }
+    const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: detail })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await openRow(view.host, 'turn:1')
+    await click(labelOf(view.host, 'step:1:1'))
+    await act(async () => { await Promise.resolve() })
+    const body = view.host.querySelector('[data-category="user"] .dsh-context-track-prose')
+    const lines = [...(body?.querySelectorAll('p') ?? [])]
+    expect(lines.map(line => line.textContent)).toEqual(['first line', 'second line'])
+    expect(lines[0]?.getAttribute('data-line')).toBe('first')
+    expect(lines[1]?.getAttribute('data-line')).toBeNull()
+  })
+
+  it('marks the first message a call added in the reading cards', async () => {
+    const detail: NodeDetail = {
+      kind: 'attempt',
+      status: 'ok',
+      inputSeq: 4,
+      messages: [
+        { role: 'system', content: [{ type: 'text', text: 'system prompt' }] },
+        { role: 'user', content: [{ type: 'text', text: 'first-question' }] },
+        { role: 'tool', toolCallId: 'c1', content: 'tool-output' },
+      ],
+      newFrom: 1,
+      tools: [],
+      toolHistory: { tools: [], updates: [] },
+      config: {},
+    }
+    const view = mount(session(oneTurn), vi.fn(async () => ({ ok: true as const, value: detail })), async () => ({ ok: true as const, value: bill() }))
+    roots.push(view.root)
+    await openRow(view.host, 'turn:1')
+    await click(labelOf(view.host, 'step:1:1'))
+    await act(async () => { await Promise.resolve() })
+    const cards = [...view.host.querySelectorAll('[data-input] .dsh-context-track-block')]
+    expect(cards).toHaveLength(3)
+    expect(cards[0]?.hasAttribute('data-new')).toBe(false)
+    expect(cards[0]?.querySelector('[data-new-mark]')).toBeNull()
+    expect(cards[1]?.getAttribute('data-new')).toBe('true')
+    expect(cards[1]?.querySelector('[data-new-mark]')?.textContent).toContain(zh.newMessages)
+    expect(cards[2]?.hasAttribute('data-new')).toBe(false)
+    expect(view.host.querySelectorAll('[data-new="true"]')).toHaveLength(1)
   })
 
   it('renders tool JSON above the result and sidecar text as markdown', async () => {

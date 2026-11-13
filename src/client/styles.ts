@@ -257,19 +257,34 @@ export const traceCss = `
 }
 
 /* ---------- round strip ---------- */
+/* A tab rail: each round reads as a tab, the current one sits on the pane
+   border with an ink bar, and the arrows switch rounds without hunting for a
+   click target in a long, scrolled strip. */
 .dsh-context-track-strip {
   box-sizing: border-box;
   display: flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: 0.25rem;
+  align-items: stretch;
+  gap: 0.35rem;
   min-width: 0;
   min-height: 2rem;
-  padding: 0.2rem 0.6rem;
+  padding: 0.2rem 0.45rem 0 0.6rem;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+.dsh-context-track-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  gap: 0.25rem;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.dsh-context-track-tabs::-webkit-scrollbar {
+  display: none;
 }
 .dsh-context-track button.dsh-context-track-turn {
   display: inline-flex;
@@ -278,23 +293,29 @@ export const traceCss = `
   align-items: stretch;
   gap: 0.14rem;
   min-width: 0;
-  padding: 0.26rem 0.55rem;
+  padding: 0.26rem 0.6rem 0.32rem;
   border: 1px solid transparent;
-  border-radius: 0.5rem;
+  border-radius: 0.5rem 0.5rem 0.3rem 0.3rem;
   font-size: 0.75rem;
   line-height: 1.25;
   white-space: nowrap;
-  transition: background 140ms ease, border-color 140ms ease;
+  scroll-snap-align: start;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
-.dsh-context-track button.dsh-context-track-turn[data-hover="true"] {
-  background: var(--dsw-alias-bg-layer-2);
+.dsh-context-track button.dsh-context-track-turn[data-hover="true"],
+.dsh-context-track button.dsh-context-track-turn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
 }
+/* The current tab owns a filled surface and an ink bar, so a mouse hover never
+   looks selected and a selected tab never looks merely hovered. */
 .dsh-context-track button.dsh-context-track-turn[aria-current="true"] {
   border-color: var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: inset 0 -2px 0 var(--dsw-alias-label-primary);
 }
-.dsh-context-track button.dsh-context-track-turn[data-pinned="true"] {
-  box-shadow: inset 0 -2px 0 var(--dsw-alias-label-secondary);
+.dsh-context-track button.dsh-context-track-turn[aria-current="true"]:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .dsh-context-track-turn-top {
   display: inline-flex;
@@ -303,8 +324,15 @@ export const traceCss = `
   min-width: 0;
 }
 .dsh-context-track-turn-name {
+  color: var(--dsw-alias-label-secondary);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+  transition: color 140ms ease;
+}
+.dsh-context-track button.dsh-context-track-turn:hover .dsh-context-track-turn-name,
+.dsh-context-track button.dsh-context-track-turn[data-hover="true"] .dsh-context-track-turn-name,
+.dsh-context-track button.dsh-context-track-turn[aria-current="true"] .dsh-context-track-turn-name {
+  color: var(--dsw-alias-label-primary);
 }
 .dsh-context-track-turn-flag {
   font-size: 0.68rem;
@@ -346,14 +374,48 @@ export const traceCss = `
   color: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-label-tertiary);
 }
+.dsh-context-track-strip-nav {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.15rem;
+  padding-inline-start: 0.35rem;
+  border-inline-start: 1px solid var(--dsw-alias-border-l2);
+}
+.dsh-context-track-strip-nav button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0.35rem;
+  color: var(--dsw-alias-label-secondary);
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.dsh-context-track-strip-nav button:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-context-track-strip-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.dsh-context-track-strip-nav svg {
+  width: 0.72rem;
+  height: 0.72rem;
+}
 .dsh-context-track-strip-count {
   flex: 0 0 auto;
-  margin-inline-start: auto;
-  padding-inline-start: 0.5rem;
+  margin-inline-end: 0.1rem;
   color: var(--dsw-alias-label-tertiary);
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* A dense panel needs the room for tabs more than it needs a counter. */
+.dsh-context-track[data-tier="dense"] .dsh-context-track-strip-count {
+  display: none;
 }
 
 /* ---------- context band ---------- */
@@ -1052,7 +1114,7 @@ export const traceCss = `
 }
 .dsh-context-track-block {
   margin: 0 0 0.55rem;
-  padding: 0.55rem 0.65rem 0.5rem;
+  padding: 0.65rem 0.8rem 0.6rem;
   border-radius: 0.5rem;
 }
 .dsh-context-track-block[data-category="system"] { border-inline-start: 3px solid var(--dsh-cat-system); }
@@ -1064,6 +1126,37 @@ export const traceCss = `
 .dsh-context-track-block[data-focus="true"] {
   outline: 1px solid var(--dsw-alias-label-tertiary);
   outline-offset: 1px;
+}
+/* The first card a call added over the previous call's window: a marked seam
+   with a filled badge, so a cumulative window shows where new context starts. */
+.dsh-context-track-block[data-new="true"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-label-primary) 38%, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);
+}
+.dsh-context-track-new {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.55rem;
+}
+.dsh-context-track-new-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0.08rem 0.5rem;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+.dsh-context-track-new-rule {
+  flex: 1 1 auto;
+  min-width: 1rem;
+  height: 1px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 34%, transparent);
 }
 .dsh-context-track-block h3,
 .dsh-context-track-section {
@@ -1496,24 +1589,50 @@ export const traceCss = `
 .dsh-context-track-meta td {
   font-size: 0.77rem;
 }
+/* The body follows the card's width, so a wide pane is not half empty; the
+   card's own padding is the only inset. */
 .dsh-context-track-prose {
-  line-height: 1.55;
+  min-width: 0;
+  line-height: 1.62;
   font-size: 0.84rem;
-}
-.dsh-context-track-prose :is(h1, h2, h3, h4, p, ul, ol, blockquote, pre) {
-  margin: 0.35rem 0;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
 }
 .dsh-context-track-prose :is(h1, h2, h3, h4) {
+  margin: 1.1rem 0 0.45rem;
   color: var(--dsw-alias-label-primary);
   font-size: 0.95rem;
   font-weight: 650;
   line-height: 1.35;
 }
+.dsh-context-track-prose :is(ul, ol, blockquote, pre) {
+  margin: 0.7rem 0;
+}
+/* Reading keeps one line per source line, so a single newline stays visible:
+   lines in one source paragraph sit closer than blank-line separated blocks. */
+.dsh-context-track-prose p {
+  margin: 0.5rem 0;
+}
+.dsh-context-track-prose > * + p[data-line="first"] {
+  margin-top: 1rem;
+}
+.dsh-context-track-prose > :first-child {
+  margin-top: 0;
+}
+.dsh-context-track-prose > :last-child {
+  margin-bottom: 0;
+}
 .dsh-context-track-prose :is(ul, ol) {
   padding-inline-start: 1.1rem;
 }
 .dsh-context-track-prose li + li {
-  margin-top: 0.18rem;
+  margin-top: 0.3rem;
+}
+.dsh-context-track-prose li p {
+  margin: 0.15rem 0;
+}
+.dsh-context-track-prose blockquote p {
+  margin: 0.2rem 0;
 }
 .dsh-context-track-prose blockquote {
   padding-inline-start: 0.65rem;

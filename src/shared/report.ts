@@ -23,6 +23,8 @@ export interface WindowReport {
   toolResults: NamedLine[]
   injections?: NamedLine[]
   skills?: NamedLine[]
+  /** Catalog wrapper text and role overhead left after pricing each listed skill. */
+  skillOverhead?: number
   estimated: Figure
   exactInput: Figure
   delta?: Figure

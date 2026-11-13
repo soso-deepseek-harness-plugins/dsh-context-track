@@ -29,7 +29,7 @@ import {
 import '../shared/projection.js'
 import type { TurnReport } from '../shared/report.js'
 import { Detail } from './Detail.js'
-import { abbreviate, copyText, formatDuration, type ShownNumber } from './format.js'
+import { abbreviate, formatDuration, type ShownNumber } from './format.js'
 import { BandIcon } from './Icon.js'
 import {
   DEFAULT_TREE_RATIO,
@@ -749,7 +749,11 @@ function MoreMenu({
   )
 }
 
-/** One row per round, or a thin label for a sidecar that sat between rounds. */
+/**
+ * One row per round, or a thin label for a sidecar that sat between rounds.
+ * The tabs scroll on their own and the arrows beside them switch rounds, so
+ * neither a long session nor a narrow panel hides the way to the next one.
+ */
 function TurnStrip({
   entries, selectedId, hoverId, pinned, total, selectedRef, t, onHover, onTurn, onMove, onMark,
 }: {
@@ -765,14 +769,13 @@ function TurnStrip({
   onMove: (delta: number) => void
   onMark: (id: string) => void
 }): ReactNode {
-  const index = entries.find(turn => turn.kind === 'turn' && turn.node.id === selectedId)
-  const position = index !== undefined && index.kind === 'turn' ? index.node.turn : undefined
+  const rounds = entries.filter((entry): entry is { kind: 'turn'; node: TurnNode } => entry.kind === 'turn')
+  const at = rounds.findIndex(entry => entry.node.id === selectedId)
+  const position = at >= 0 ? rounds[at].node.turn : undefined
   return (
     <div
       className="dsh-context-track-strip"
       data-pane="strip"
-      role="tablist"
-      aria-label={t('stripLabel')}
       onMouseLeave={() => { onHover(undefined) }}
       onKeyDown={event => {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
@@ -781,36 +784,79 @@ function TurnStrip({
         onMove(event.key === 'ArrowRight' ? 1 : -1)
       }}
     >
-      {entries.map(entry => entry.kind === 'turn' ? (
-        <TurnChip
-          key={entry.node.id}
-          node={entry.node}
-          selected={selectedId === entry.node.id}
-          hovered={hoverId === entry.node.id}
-          pinned={pinned && selectedId === entry.node.id}
-          selectedRef={selectedRef}
-          t={t}
-          onHover={onHover}
-          onTurn={onTurn}
-        />
-      ) : (
-        <button
-          key={entry.node.id}
-          type="button"
-          className="dsh-context-track-mark"
-          data-mark={entry.node.id}
-          title={sidecarName(entry.node.purpose, t)}
-          onClick={() => { onMark(entry.node.id) }}
-        >
-          <span>{sidecarName(entry.node.purpose, t)}</span>
-        </button>
-      ))}
-      {total > 6 && position !== undefined ? (
-        <span className="dsh-context-track-strip-count" data-strip-count>
-          {t('roundIndex').replace('{n}', String(position)).replace('{total}', String(total))}
-        </span>
+      <div className="dsh-context-track-tabs" role="tablist" aria-label={t('stripLabel')}>
+        {entries.map(entry => entry.kind === 'turn' ? (
+          <TurnChip
+            key={entry.node.id}
+            node={entry.node}
+            selected={selectedId === entry.node.id}
+            hovered={hoverId === entry.node.id}
+            pinned={pinned && selectedId === entry.node.id}
+            selectedRef={selectedRef}
+            t={t}
+            onHover={onHover}
+            onTurn={onTurn}
+          />
+        ) : (
+          <button
+            key={entry.node.id}
+            type="button"
+            className="dsh-context-track-mark"
+            data-mark={entry.node.id}
+            title={sidecarName(entry.node.purpose, t)}
+            onClick={() => { onMark(entry.node.id) }}
+          >
+            <span>{sidecarName(entry.node.purpose, t)}</span>
+          </button>
+        ))}
+      </div>
+      {rounds.length > 1 ? (
+        <div className="dsh-context-track-strip-nav" data-strip-nav>
+          {total > 6 && position !== undefined ? (
+            <span className="dsh-context-track-strip-count" data-strip-count>
+              {t('roundIndex').replace('{n}', String(position)).replace('{total}', String(total))}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="dsh-context-track-strip-step"
+            data-strip-step="prev"
+            aria-label={t('prevTurn')}
+            title={t('prevTurn')}
+            disabled={at <= 0}
+            onClick={() => { onMove(-1) }}
+          >
+            <StripArrow direction="prev" />
+          </button>
+          <button
+            type="button"
+            className="dsh-context-track-strip-step"
+            data-strip-step="next"
+            aria-label={t('nextTurn')}
+            title={t('nextTurn')}
+            disabled={at < 0 || at >= rounds.length - 1}
+            onClick={() => { onMove(1) }}
+          >
+            <StripArrow direction="next" />
+          </button>
+        </div>
       ) : null}
     </div>
+  )
+}
+
+function StripArrow({ direction }: { direction: 'prev' | 'next' }): ReactNode {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d={direction === 'prev' ? 'M9.75 3.5 5.25 8l4.5 4.5' : 'M6.25 3.5 10.75 8l-4.5 4.5'}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 
@@ -860,7 +906,7 @@ function TurnChip({
           <span className="dsh-context-track-turn-stat-label">{t('elapsed')}</span>
           {elapsed === undefined
             ? <span className="dsh-context-track-muted">{t('absent')}</span>
-            : <CopySpan shown={formatDuration(elapsed)} />}
+            : <ChipNumber shown={formatDuration(elapsed)} />}
         </span>
         <span className="dsh-context-track-turn-sep" aria-hidden="true">·</span>
         <span className="dsh-context-track-turn-stat" data-chip-stat="total">
@@ -890,7 +936,7 @@ function TurnTotal({ node, t }: { node: TurnNode; t: (key: TrackKey) => string }
   if (total === undefined) return <span className="dsh-context-track-muted">{t('absent')}</span>
   return (
     <span data-turn-total>
-      <CopySpan shown={abbreviate(total)} />
+      <ChipNumber shown={abbreviate(total)} />
     </span>
   )
 }
@@ -989,18 +1035,13 @@ function usePanelTier(ref: { readonly current: HTMLDivElement | null }): Tier {
   return tier
 }
 
-function CopySpan({ shown }: { shown: ShownNumber }): ReactNode {
-  if (!shown.abbreviated) return <span className="dsh-context-track-num">{shown.text}</span>
+/**
+ * A round's number, read-only. Copy-on-click lives in the detail pane; inside a
+ * tab it would turn part of the switch target into a dead zone.
+ */
+function ChipNumber({ shown }: { shown: ShownNumber }): ReactNode {
   return (
-    <span
-      className="dsh-context-track-num"
-      title={shown.full}
-      data-full={shown.full}
-      onClick={event => {
-        event.stopPropagation()
-        void copyText(shown.full)
-      }}
-    >
+    <span className="dsh-context-track-num" title={shown.abbreviated ? shown.full : undefined}>
       {shown.text}
     </span>
   )

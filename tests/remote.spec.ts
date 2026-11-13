@@ -164,8 +164,103 @@ describe('getNode', () => {
     detach()
   })
 
-  it('shows a tool result after the panel already read the running call', async () => {
+  it('marks the first message each call added over the previous call’s window', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    const remote = apply(ctx)
+    const session = ctx.sessions.prepare(SessionId('live'))
+    const detach = ctx.sessions.enter(session)
+    ctx.sessions.announce(session)
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'first-question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'first-answer' }],
+        source: { kind: 'model', provider: 'deepseek', model: 'chat' },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('step/start', { turn: 1, step: 2 })
+
+    // Step 2 first saw the question; step 1's answer is the added card.
+    const second = await remote.getNode(session.id, 'step:1:2')
+    expect(second).toMatchObject({ kind: 'step', status: 'running', newFrom: 1 })
+    expect(JSON.stringify(second)).not.toContain('messageSeqs')
+
+    session.append('assistant/message', {
+      turn: 1,
+      step: 2,
+      message: createMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'second-answer' }],
+        source: { kind: 'model', provider: 'deepseek', model: 'chat' },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 2 })
+    const settled = await remote.getNode(session.id, 'attempt:1:2:1')
+    expect(settled).toMatchObject({ kind: 'attempt', status: 'ok', newFrom: 1 })
+
+    // A retry adds the failed call's output over the previous attempt's window.
+    session.append('assistant/attempt', {
+      turn: 1,
+      step: 2,
+      failure: { message: 'upstream', code: 'UPSTREAM' },
+    })
+    const retried = await remote.getNode(session.id, 'step:1:2')
+    expect(retried).toMatchObject({ kind: 'attempt', newFrom: 2 })
+    detach()
+  })
+
+  it('marks this round’s user message on a turn’s first step', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    const remote = apply(ctx)
+    const session = ctx.sessions.prepare(SessionId('live'))
+    const detach = ctx.sessions.enter(session)
+    ctx.sessions.announce(session)
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'first-question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'first-answer' }],
+        source: { kind: 'model', provider: 'deepseek', model: 'chat' },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'ok' } })
+    session.append('turn/start', { turn: 2 })
+    session.append('step/start', { turn: 2, step: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'second-question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const second = await remote.getNode(session.id, 'step:2:1')
+    expect(second).toMatchObject({ kind: 'step', status: 'running' })
+    if (second.kind !== 'step') return
+    const messages = Array.isArray(second.messages) ? second.messages : []
+    expect(JSON.stringify(messages[second.newFrom ?? -1])).toContain('second-question')
+    expect(JSON.stringify(messages[0])).not.toContain('second-question')
+    detach()
+  })
+
+  it('shows a tool result after the panel already read the running call', async () => {    const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     const remote = apply(ctx)

@@ -89,7 +89,10 @@ export function ContextBand({
     injection: window.injections ?? [],
     skill: window.skills ?? [],
   }
-  const hasDetail = (id: ToolListCategory) => (details[id]?.length ?? 0) > 0 || (id === 'tools' && window.definitionOverhead !== undefined)
+  const overheadOf = (id: ToolListCategory): number | undefined => (
+    id === 'tools' ? window.definitionOverhead : id === 'skill' ? window.skillOverhead : undefined
+  )
+  const hasDetail = (id: ToolListCategory) => (details[id]?.length ?? 0) > 0 || overheadOf(id) !== undefined
   const toggleDetail = (id: ToolListCategory) => { setDetailOpen(current => ({ ...current, [id]: current[id] !== true })) }
   const reclaimed = reclaimedOf(report.events)
   const gaps = report.events.filter(event => event.kind === 'compaction' && event.inWindow)
@@ -162,7 +165,7 @@ export function ContextBand({
                     {expanded ? (
                       <ToolList
                         tools={details[detailCategory] ?? []}
-                        overhead={detailCategory === 'tools' ? window.definitionOverhead : undefined}
+                        overhead={overheadOf(detailCategory)}
                         category={detailCategory}
                         t={t}
                         nested

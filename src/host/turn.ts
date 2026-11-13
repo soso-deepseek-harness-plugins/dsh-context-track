@@ -128,6 +128,7 @@ function windowOf(messages: unknown, tools: unknown, attempt: AttemptRef | undef
     toolResults: classified.toolResults.map(tool => ({ name: tool.name, tokens: tool.tokens, calls: tool.calls })),
     injections: classified.injections,
     skills: classified.skills,
+    ...(classified.skillOverhead !== undefined ? { skillOverhead: classified.skillOverhead } : {}),
     estimated,
     exactInput: exact.input,
     ...(delta !== undefined ? { delta: delta.delta, consistent: delta.consistent } : {}),

@@ -13,13 +13,14 @@ import {
   findNode,
   type AttemptRef,
   type SidecarNode,
+  type StepNode,
   type ToolNode,
   type TrackState,
   type TurnNode,
   type UnlinkedNode,
 } from '../shared/model.js'
 import { foldAll } from './fold.js'
-import { materializePrefix, withAttemptOutput, type MaterializeResult } from './materialize.js'
+import { inputFields, materializePrefix, withAttemptOutput, type MaterializeResult } from './materialize.js'
 import { buildTurnReport, selectAttempt } from './turn.js'
 import { compactionDetail, compactionOrdinal, searchDetail, titleDetail } from './sidecar.js'
 import { pairInstruction, Supplement, type SupplementOptions } from './supplement.js'
@@ -133,11 +134,13 @@ export class TrackRemote extends TypertRemoteService {
       const projections = hostSessions(this.ctx).messageProjections
       switch (found.kind) {
         case 'attempt':
-          return this.attemptDetail(sessionId, loaded.events, found.node, projections)
+          return this.attemptDetail(sessionId, loaded.events, found.node, found.step, loaded.state, projections)
         case 'step': {
           const latest = found.node.attempts.at(-1)
-          if (latest !== undefined) return this.attemptDetail(sessionId, loaded.events, latest, projections)
-          return this.runningDetail(sessionId, loaded.events, projections)
+          if (latest !== undefined) {
+            return this.attemptDetail(sessionId, loaded.events, latest, found.node, loaded.state, projections)
+          }
+          return this.runningDetail(sessionId, loaded.events, found.node, loaded.state, projections)
         }
         case 'tool':
           return this.cache.getOr(sessionId, toolCacheKey(found.node), () => toolDetail(loaded.events, found.node))
@@ -191,21 +194,26 @@ export class TrackRemote extends TypertRemoteService {
 
   /**
    * A step with no assistant event yet.
-   * Keyed by the log length, not by `input:${length}`: the next assistant event
-   * uses that same seq as its input, and must not inherit this running snapshot.
+   * Keyed by the step and the log length: the next assistant event uses that
+   * same seq as its input and must not inherit this running snapshot, and two
+   * running steps share the window but not the added-context boundary.
    */
   private runningDetail(
     sessionId: string,
     events: readonly SessionEvent[],
+    step: StepNode,
+    state: TrackState,
     projections: readonly SessionMessageProjection[],
   ): StepRunningDetail {
     const inputSeq = events.length
     const prefix = this.prefixAt(sessionId, events, inputSeq, projections)
-    return this.cache.getOr(sessionId, `running:${inputSeq}`, () => ({
+    const newFrom = firstNewMessage(prefix.messageSeqs, newFromSeq(state, step))
+    return this.cache.getOr(sessionId, `running:${step.id}:${inputSeq}`, () => ({
       kind: 'step',
       status: 'running',
       inputSeq,
-      ...prefix,
+      ...inputFields(prefix),
+      ...(newFrom !== undefined ? { newFrom } : {}),
     }))
   }
 
@@ -214,9 +222,13 @@ export class TrackRemote extends TypertRemoteService {
     sessionId: string,
     events: readonly SessionEvent[],
     attempt: AttemptRef,
+    step: StepNode,
+    state: TrackState,
     projections: readonly SessionMessageProjection[],
   ): ReturnType<typeof withAttemptOutput> {
-    return withAttemptOutput(events, attempt, this.prefixAt(sessionId, events, attempt.inputSeq, projections))
+    const prefix = this.prefixAt(sessionId, events, attempt.inputSeq, projections)
+    const newFrom = firstNewMessage(prefix.messageSeqs, newFromSeq(state, step, attempt.id))
+    return withAttemptOutput(events, attempt, prefix, newFrom)
   }
 
   private async load(sessionId: string): Promise<{ events: readonly SessionEvent[]; state: TrackState } | undefined> {
@@ -304,6 +316,30 @@ function unlinkedDetail(node: UnlinkedNode): UnlinkedDetail {
     ...(node.childLabel !== undefined ? { childLabel: node.childLabel } : {}),
     ...(node.childMode !== undefined ? { childMode: node.childMode } : {}),
   }
+}
+
+/**
+ * Log seq where this call's added context starts. A retry adds the failed
+ * call's output; a later step adds the previous step's output and tool results;
+ * a turn's first step adds the user message that opened the round.
+ */
+function newFromSeq(state: TrackState, step: StepNode, attemptId?: string): number | undefined {
+  const attemptIndex = attemptId === undefined ? -1 : step.attempts.findIndex(item => item.id === attemptId)
+  if (attemptIndex > 0) return step.attempts[attemptIndex - 1]?.inputSeq
+  const turn = state.root.find((node): node is TurnNode => node.kind === 'turn' && node.turn === step.turn)
+  if (turn === undefined) return undefined
+  const steps = turn.items.filter((item): item is StepNode => item.kind === 'step')
+  const index = steps.findIndex(item => item.id === step.id)
+  const previous = index > 0 ? steps[index - 1] : undefined
+  if (previous !== undefined) return previous.attempts.at(-1)?.inputSeq ?? previous.startSeq
+  return turn.userInputs?.[0]?.seq
+}
+
+/** Index of the first message at or after the boundary. Undefined means no marked card. */
+function firstNewMessage(seqs: readonly number[], boundary: number | undefined): number | undefined {
+  if (boundary === undefined) return undefined
+  const index = seqs.findIndex(seq => seq >= boundary)
+  return index >= 0 ? index : undefined
 }
 
 function directoryOf(ctx: Context): string | undefined {

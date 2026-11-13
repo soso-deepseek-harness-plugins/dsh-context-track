@@ -63,6 +63,25 @@ describe('classify', () => {
     ])
     expect(window.skills.reduce((sum, line) => sum + line.tokens, 0)).toBe(window.totals.skill)
   })
+
+  it('splits a skill catalog into one estimated line per skill and keeps the wrapper as overhead', () => {
+    const entries = [
+      { name: 'tdd', description: 'Test-first development.' },
+      { name: 'review', description: 'Review the change.' },
+    ]
+    const body = entries.map(entry => `- \`${entry.name}\`: ${entry.description}`).join('\n')
+    const text = `<system-reminder>\n<available_skills>\n${body}\n</available_skills>\n</system-reminder>`
+    const content = [{ type: 'text', text }]
+    const window = classifyWindow([{ role: 'user', content, source: { kind: 'skill-catalog', entries } }], [])
+    expect(window.skills.map(line => line.name)).toEqual(['tdd', 'review'])
+    expect(window.skills.every(line => line.calls === 1)).toBe(true)
+    expect(window.skillOverhead).toBeGreaterThan(0)
+    expect(window.skills.reduce((sum, line) => sum + line.tokens, 0) + (window.skillOverhead ?? 0))
+      .toBe(window.totals.skill)
+
+    const fallback = classifyWindow([{ role: 'user', content, source: { kind: 'skill-catalog' } }], [])
+    expect(fallback.skills.map(line => line.name)).toEqual(['tdd', 'review'])
+  })
 })
 
 describe('cache hit rate', () => {

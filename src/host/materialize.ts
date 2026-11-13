@@ -12,11 +12,22 @@ import type { AttemptRef } from '../shared/model.js'
 
 export interface MaterializeResult {
   messages: unknown
+  /** Log seq of each message in `messages`, in the same order. */
+  messageSeqs: number[]
   tools: unknown
   toolHistory: unknown
   config: unknown
   adapterDefaults?: unknown
   context?: unknown
+}
+
+/** Client-facing prefix fields. `messageSeqs` stays host-side and never reaches a detail. */
+export type MaterializedInput = Omit<MaterializeResult, 'messageSeqs'>
+
+export function inputFields(prefix: MaterializeResult): MaterializedInput {
+  const { messageSeqs, ...rest } = prefix
+  void messageSeqs
+  return rest
 }
 
 /** Fold `seq < inputSeq` into the messages, tools, and header that call saw. */
@@ -27,11 +38,14 @@ export function materializePrefix(
 ): MaterializeResult {
   const prefix = events.filter(event => event.seq < inputSeq)
   const surface = foldSurface(prefix, projections)
+  const messageSeqs: number[] = []
   const messages = surface.nodes.flatMap(seq => {
     const event = prefix.find(item => item.seq === seq)
     if (event === undefined) return []
     const message = deriveEventMessage(event, surface.projectedMessages)
-    return message === null ? [] : [message]
+    if (message === null) return []
+    messageSeqs.push(seq)
+    return [message]
   })
   const header = foldRequestHeader(prefix)
   const history = new ToolHistoryProjection()
@@ -42,6 +56,7 @@ export function materializePrefix(
   }
   return {
     messages,
+    messageSeqs,
     tools: header?.tools ?? [],
     toolHistory: history.snapshot(),
     config: header?.config,
@@ -69,6 +84,7 @@ export function withAttemptOutput(
   events: readonly SessionEvent[],
   attempt: AttemptRef,
   prefix: MaterializeResult,
+  newFrom?: number,
 ): AttemptDetail {
   const outputEvent = attempt.outputSeq === undefined
     ? undefined
@@ -87,7 +103,8 @@ export function withAttemptOutput(
     kind: 'attempt',
     status: attempt.status,
     inputSeq: attempt.inputSeq,
-    ...prefix,
+    ...inputFields(prefix),
+    ...(newFrom !== undefined ? { newFrom } : {}),
     ...(message !== undefined ? { output: message } : {}),
     ...(outputData?.usage !== undefined ? { usage: outputData.usage } : {}),
     ...(outputData?.interrupted === true ? { interrupted: true } : {}),
@@ -102,12 +119,14 @@ export function materializeRunning(
   events: readonly SessionEvent[],
   inputSeq: number,
   projections: readonly SessionMessageProjection[],
+  newFrom?: number,
 ): StepRunningDetail {
   return {
     kind: 'step',
     status: 'running',
     inputSeq,
-    ...materializePrefix(events, inputSeq, projections),
+    ...inputFields(materializePrefix(events, inputSeq, projections)),
+    ...(newFrom !== undefined ? { newFrom } : {}),
   }
 }
 

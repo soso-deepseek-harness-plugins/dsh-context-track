@@ -12,6 +12,8 @@ export interface AttemptDetail {
   status: string
   inputSeq: number
   messages: unknown
+  /** Index of the first message this call added over the previous call's window. */
+  newFrom?: number
   tools: unknown
   toolHistory: unknown
   config: unknown
@@ -35,6 +37,8 @@ export interface StepRunningDetail {
   status: 'running'
   inputSeq: number
   messages: unknown
+  /** Index of the first message this call added over the previous call's window. */
+  newFrom?: number
   tools: unknown
   toolHistory: unknown
   config: unknown

@@ -162,7 +162,14 @@ function Structured({
     return (
       <div data-io>
         <Facts detail={detail} t={t} />
-        <InputCards messages={detail.messages} tools={detail.tools} t={t} onSlice={onSlice} focusCategory={focusCategory} />
+        <InputCards
+          messages={detail.messages}
+          tools={detail.tools}
+          newFrom={detail.newFrom}
+          t={t}
+          onSlice={onSlice}
+          focusCategory={focusCategory}
+        />
         {detail.kind === 'attempt' ? (
           <OutputCards output={detail.output} usage={detail.usage} t={t} onSlice={onSlice} />
         ) : (
@@ -335,10 +342,12 @@ function formatCount(value: unknown): string {
 }
 
 function InputCards({
-  messages, tools, t, onSlice, focusCategory,
+  messages, tools, newFrom, t, onSlice, focusCategory,
 }: {
   messages: unknown
   tools: unknown
+  /** Index of the first message this call added over the previous one. */
+  newFrom?: number
   t: (key: TrackKey) => string
   onSlice: (value: unknown) => void
   focusCategory?: CategoryId
@@ -351,7 +360,17 @@ function InputCards({
       {list.map((message, index) => {
         const item = classified.items.find(entry => entry.message === message)
         const focused = focusCategory !== undefined && item?.category === focusCategory
-        return <MessageCard key={index} message={message} item={item} t={t} onSlice={onSlice} focused={focused} />
+        return (
+          <MessageCard
+            key={index}
+            message={message}
+            item={item}
+            t={t}
+            onSlice={onSlice}
+            focused={focused}
+            isNew={newFrom !== undefined && index === newFrom}
+          />
+        )
       })}
     </div>
   )
@@ -573,7 +592,7 @@ function ReadingBody({
 }
 
 function MessageCard({
-  message, item, t, onSlice, faint = false, focused = false,
+  message, item, t, onSlice, faint = false, focused = false, isNew = false,
 }: {
   message: unknown
   item?: ClassifiedItem
@@ -581,6 +600,8 @@ function MessageCard({
   onSlice: (value: unknown) => void
   faint?: boolean
   focused?: boolean
+  /** First card this call added over the previous call's window. */
+  isNew?: boolean
 }): ReactNode {
   const text = messageText(message)
   const embedded = faint ? undefined : compositeJson(text)
@@ -603,7 +624,14 @@ function MessageCard({
       data-folded={folded && !open ? 'true' : undefined}
       data-clamped={clamped ? 'true' : undefined}
       data-focus={focused ? 'true' : undefined}
+      data-new={isNew ? 'true' : undefined}
     >
+      {isNew ? (
+        <header className="dsh-context-track-new" data-new-mark>
+          <span className="dsh-context-track-new-badge">{t('newMessages')}</span>
+          <span className="dsh-context-track-new-rule" aria-hidden="true" />
+        </header>
+      ) : null}
       <table className="dsh-context-track-meta">
         <tbody>
           {role.length > 0 ? <MetaRow label={t('role')} value={role} /> : null}

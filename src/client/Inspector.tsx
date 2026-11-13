@@ -29,6 +29,7 @@ export function ToolList({
   if (tools.length === 0 && overhead === undefined) return null
   const nameKey = category === 'tools' ? 'catTools' : category === 'skill' ? 'catSkill' : 'catInjection'
   const searchKey = category === 'tools' ? 'searchTools' : category === 'skill' ? 'searchSkill' : 'searchInjection'
+  const overheadKey: TrackKey = category === 'skill' ? 'skillOverhead' : 'overhead'
   const needle = query.trim().toLowerCase()
   const filtered = needle.length === 0
     ? [...tools]
@@ -70,7 +71,7 @@ export function ToolList({
             <li key={tool.name} data-tool={tool.name} {...(tool.calls !== undefined ? { 'data-calls': tool.calls } : {})}>
               <span className="dsh-context-track-tool-name" title={tool.name}>
                 <span>{tool.name}</span>
-                {category !== 'tools' && tool.calls !== undefined ? (
+                {category !== 'tools' && tool.calls !== undefined && (category !== 'skill' || tool.calls > 1) ? (
                   <small className="dsh-context-track-tool-calls">{t('entries').replace('{n}', String(tool.calls))}</small>
                 ) : null}
               </span>
@@ -91,7 +92,7 @@ export function ToolList({
       ) : null}
       {overhead !== undefined ? (
         <p className="dsh-context-track-tools-overhead" data-overhead>
-          {t('overhead')} <FigureView figure={{ basis: 'estimated', value: overhead }} t={t} showBasis={false} />
+          {t(overheadKey)} <FigureView figure={{ basis: 'estimated', value: overhead }} t={t} showBasis={false} />
         </p>
       ) : null}
     </section>

@@ -19,6 +19,11 @@ export function contentPrice(text: string): number {
   return charTokens(text) + BLOCK_OVERHEAD
 }
 
+/** Bare character tokens for one fragment, without block or role overhead. */
+export function textTokens(text: string): number {
+  return charTokens(text)
+}
+
 /** System prompt price: character tokens plus the role, and no per-block overhead. */
 export function estimateSystemText(text: string): number {
   return charTokens(text) + ROLE_OVERHEAD
