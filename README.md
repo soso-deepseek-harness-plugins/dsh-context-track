@@ -35,6 +35,8 @@ dsh web                     # 或 dsh --profile <profile>
 
 打开会话后，页签和右侧栏会出现「上下文链路追踪」。注意 `pnpm add dsh-context-track` 只装进 `node_modules`，不会启用宿主插件层，必须用 `dsh plugin add`。
 
+从 GitHub 直装（`dsh plugin add github:<owner>/<repo>`）时拉的是源码，pnpm 会用包的 `prepare` 现场编译；pnpm 11 需要先放行构建脚本，应用里会提示一次，允许后安装才会生成 `lib/`。发 npm 或 `.tgz` 则装的是已构建包，没有这一步，仍优先推荐。
+
 卸载：
 
 ```bash

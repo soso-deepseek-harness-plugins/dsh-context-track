@@ -61,7 +61,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsdown",
     "clean": "rm -rf lib",
-    "prepublishOnly": "pnpm run build",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
     "test": "vitest run"
   },
   "dependencies": {
