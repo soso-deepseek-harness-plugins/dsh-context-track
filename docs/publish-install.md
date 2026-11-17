@@ -22,10 +22,11 @@
 pnpm install
 pnpm test
 pnpm run build
-pnpm run clean          # 删掉 lib/
+pnpm run check:lib      # build 后核对 lib/ 有没有漏提交
+pnpm run clean          # 删掉 lib/（版本库里的产物一起消失，记得 build 回来）
 ```
 
-编完应有 `lib/host/index.js`，以及 Web 客户端 `lib/client/index.js`。后者是 `window.__ModuleLoader__.load` 工厂，不是 `tsc` 直接吐出的 ESM。`prepare` / `prepack` 会自动再 build：`pnpm install`（含 Git 直装的 prepare）、`pnpm pack`、`pnpm publish` 都会先编一次，装的人不用手工 build。`clean` 只清本仓库构建产物，不碰 `$DSH_HOME` 或 profile。
+编完应有 `lib/host/index.js`，以及 Web 客户端 `lib/client/index.js`。后者是 `window.__ModuleLoader__.load` 工厂，不是 `tsc` 直接吐出的 ESM。`lib/` 随仓库提交：Git 直装直接用它，`pnpm pack` / `pnpm publish` 前后的 `prepack` 也会再 build 一次。包内没有任何安装期脚本，所以 pnpm 11 不会拦，也不会提示放行。改完源码务必 `pnpm run build` 并把 `lib/` 一起提交，`pnpm run check:lib` 用来核对有没有漏。`clean` 只清本仓库构建产物，不碰 `$DSH_HOME` 或 profile。
 
 ### 验包
 
@@ -78,7 +79,7 @@ pnpm publish --access public --no-git-checks
 
 **不发公共 npm**：把 `pnpm pack` 得到的 `.tgz` 发给对方 → `dsh plugin add ./xxx.tgz`。
 
-**Git 直装**：`dsh plugin add github:<owner>/<repo>` 拉的是源码归档，`lib/` 不在版本库里；pnpm 会跑包的 `prepare` 编译，但按 pnpm 11 的策略要先放行构建脚本（应用里会提示「有依赖的安装脚本需要你允许后才能继续」，或手动在 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 加一条）。编译失败时安装照样完成、启动才报 `Cannot find module .../lib/host/index.js`，所以能发 npm / tgz 时优先发它们。
+**Git 直装**：`dsh plugin add github:<owner>/<repo>` 拉的是仓库快照，`lib/` 就在版本库里，装的就是编好的产物。包本身没有 `prepare` / `postinstall` 这类安装期脚本，pnpm 11 的 `allowBuilds` 不会挡路，也就不再出现「有依赖的安装脚本需要你允许后才能继续」。代价是仓库里多一份产物：**改完源码要 `pnpm run build` 并连同 `lib/` 一起提交**，否则直装拿到的是旧产物；`pnpm run check:lib` 可以先 build 再核对。要求仓库干净、不想带产物时，仍优先发 npm 或发 `.tgz`。
 
 </details>
 
@@ -288,7 +289,8 @@ pnpm dsh web --patch /path/to/dsh-context-track/dev.patch.yml
 | publish 403 / 409 | 登录、换包名，或升版本 |
 | publish 404 / 推包失败 | 加 `--registry=https://registry.npmjs.org/` |
 | 装上了但加载失败 | 先 `pnpm run build`，再用 `tar -tzf` 确认 tgz 有 `lib/` |
-| 启动报 `Cannot find module .../lib/host/index.js` | 装的是没构建的包：Git 直装时 `prepare` 没跑或被 pnpm 拦下。装上后 `ls $DSH_HOME/profiles/<profile>/node_modules/dsh-context-track/lib` 应能看到 `host/` 与 `client/`；缺了就放行构建脚本后重装，或改用 npm / tgz |
+| 应用提示「有依赖的安装脚本需要你允许后才能继续」 | 带 `prepare` 的旧提交才会出现。当前版本把 `lib/` 提交进仓库、包内没有安装期脚本，装最新提交不再需要放行；profile 的 `pnpm-workspace.yaml` 里残留的旧 `allowBuilds` 条目可以删掉 |
+| 启动报 `Cannot find module .../lib/host/index.js` | 装的是没构建的包：Git 直装用的是仓库里的 `lib/`，提交时漏了或没 build。装上后 `ls $DSH_HOME/profiles/<profile>/node_modules/dsh-context-track/lib` 应能看到 `host/` 与 `client/`；缺了就 `pnpm run build` 后提交 `lib/` 重装，或改用 npm / tgz |
 | Web / Desktop 没有「上下文链路追踪」 | 确认编过 `lib/client/index.js`（工厂包，不是裸 ESM），且用对应 profile 的 `plugin add` 整包装入。页签只在打开会话后出现 |
 | Desktop 装上了但界面没有 | 确认 `DSH_HOME` 与启动一致；装完后重开应用 |
 | Desktop `plugin add` 失败 | 先 `start:desktop` 开一次并完全退出，再在 harness 根目录 `pnpm dsh plugin …` |

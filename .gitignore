@@ -28,7 +28,9 @@ bower_components/
 # 以下按你的框架保留，用不到的删掉
 dist/
 dist-ssr/
-lib/
+# lib/ 例外：GitHub 直装拉的是仓库，pnpm 11 会拦下安装脚本，
+# 所以构建产物随仓库提交，这里只忽略源码映射以减少噪音。
+lib/**/*.map
 build/
 out/
 .output/

@@ -24,7 +24,7 @@
 
 ## 安装
 
-插件发布物是已构建的 `lib/`，安装方不需要再 build。
+插件发布物是已构建的 `lib/`，安装方不需要再 build。`lib/` 也随仓库提交：GitHub 直装拿到的就是编好的产物，包本身没有安装期脚本，pnpm 11 不会拦、也不会弹「需要你允许安装脚本」。
 
 ```bash
 dsh plugin --profile <profile> add dsh-context-track
@@ -35,7 +35,7 @@ dsh web                     # 或 dsh --profile <profile>
 
 打开会话后，页签和右侧栏会出现「上下文链路追踪」。注意 `pnpm add dsh-context-track` 只装进 `node_modules`，不会启用宿主插件层，必须用 `dsh plugin add`。
 
-从 GitHub 直装（`dsh plugin add github:<owner>/<repo>`）时拉的是源码，pnpm 会用包的 `prepare` 现场编译；pnpm 11 需要先放行构建脚本，应用里会提示一次，允许后安装才会生成 `lib/`。发 npm 或 `.tgz` 则装的是已构建包，没有这一步，仍优先推荐。
+从 GitHub 直装（`dsh plugin add github:<owner>/<repo>`）拉的是仓库快照，用的是提交进仓库的 `lib/`，因此**改完源码要 `pnpm run build` 并把 `lib/` 一起提交**，否则直装拿到的还是旧产物；`pnpm run check:lib` 可以先 build 再核对 `lib/` 有没有漏提交。发 npm 或 `.tgz` 时 `prepack` 会重新 build，产物同源。
 
 卸载：
 
@@ -49,10 +49,11 @@ dsh plugin --profile <profile> remove dsh-context-track
 pnpm install
 pnpm test        # Vitest，用例在 tests/
 pnpm run build   # tsc 类型与声明 → lib/；tsdown 打客户端 → lib/client/index.js
-pnpm run clean   # 删掉 lib/
+pnpm run check:lib  # build 并核对 lib/ 是否都已提交（发版 / 推 GitHub 前跑）
+pnpm run clean   # 删掉 lib/（含版本库里的产物，记得 build 回来）
 ```
 
-客户端产物是 `window.__ModuleLoader__.load` 工厂，不是 `tsc` 直接输出的 ESM。本机联调时把插件目录或 `pnpm pack` 出的 `.tgz` 装进 profile，改完插件重新 `build` 后重启 Web 或重开 Desktop。
+`lib/` 随仓库提交，`pnpm install` 不再自动 build：改完源码先 `pnpm run build`，再和源码一起提交。客户端产物是 `window.__ModuleLoader__.load` 工厂，不是 `tsc` 直接输出的 ESM。本机联调时把插件目录或 `pnpm pack` 出的 `.tgz` 装进 profile，改完插件重新 `build` 后重启 Web 或重开 Desktop。
 
 ## 目录
 
