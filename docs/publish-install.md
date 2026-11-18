@@ -6,6 +6,7 @@
 | --- | --- |
 | 本仓库编译 / 自测 | [本地开发](#本地开发) |
 | 发到 npm | [发布](#发布) |
+| 让 dsh-market 收录 | [收录](#收录进-dsh-market--插件市场) |
 | 别人怎么装 | [第三方安装](#第三方安装) |
 | 卸掉插件 | [插件卸载](#插件卸载) |
 | 本机 harness 联调 | [源码联调](#源码联调) |
@@ -84,6 +85,47 @@ pnpm publish --access public --no-git-checks
 </details>
 
 发完核对：`npm view dsh-context-track`，或空目录 `pnpm add dsh-context-track`。
+
+---
+
+## 收录进 dsh-market / 插件市场
+
+**dsh-market 仓库本身不收插件条目。** 它的目录来自 [`awesome-dsh-plugin/awesome-dsh-plugin`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)：一个插件一个 YAML 文件，合并后网站、`index.json` 和 dsh-market 会自动读到，通常一天内。所以不要去 dsh-market 提 PR。
+
+投稿只有一件事——往上面那个仓库提一个 PR，新增：
+
+```text
+data/plugins/soso-deepseek-harness-plugins__dsh-context-track.yml
+```
+
+本仓库的 `scripts/submit-market.sh` 把整条流程串起来：清单检查 → fork → 同步上游 → 写条目 → 推送 → 开 PR。
+
+```bash
+./scripts/submit-market.sh --dry-run   # 只检查并打印条目，不碰任何远端
+./scripts/submit-market.sh             # 正式提交（会先让你确认）
+./scripts/submit-market.sh -y          # 跳过确认
+```
+
+前置：`gh auth login`。脚本会顺手给本仓库补 `dsh-plugin` topic。
+
+收录要求（CI 会查，评审还会读源码核对描述）：
+
+| 项 | 说明 |
+| --- | --- |
+| `dsh.bundle` | `package.json` 必须声明；只有 `dsh.client` 装不了 |
+| 仓库年龄 | 创建满 1 天 |
+| topic | 仓库带 `dsh-plugin` |
+| 描述 | 只说功能、可被代码核对，不带营销词 |
+
+**评审看的是 GitHub 上的 `main`。** 先在本地 `pnpm run build`，把改动（尤其 `lib/`）提交并推送，再提收录 PR；脚本会因为工作区脏或有未推送提交给出提醒。
+
+可选：
+
+- 图标只收 GitHub 托管的位图，SVG 会被拒。`rsvg-convert -w 180 -h 180 icon.svg -o assets/icon-180.png`，提交后 `ICON=https://raw.githubusercontent.com/soso-deepseek-harness-plugins/dsh-context-track/main/assets/icon-180.png ./scripts/submit-market.sh`。
+- 截图放在本仓库的 `screenshots.json`（`package.json` 旁边），列 1–8 个相对路径；市场会自动读，不用改收录条目。
+- 发 npm 只影响市场里是否显示下载量，不影响收录。
+
+分类由 `CATEGORY` 控制（默认 `session`）。可选值：`agi ui usage theme model identity session memory tools wsl browser vision voice docs skill workflow git notify dev security remote market fun`。
 
 ---
 

@@ -14,6 +14,7 @@
 #   ./scripts/submit-market.sh --category usage --icon https://raw.githubusercontent.com/...
 #
 # 可覆盖的环境变量：PLUGIN_OWNER / PLUGIN_REPO / CATEGORY / ICON / EN_DESC / ZH_DESC / BRANCH / WORKDIR
+#                      UPSTREAM
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -41,7 +42,7 @@ warn() { printf '! %s\n' "$*" >&2; }
 step() { printf '\n==> %s\n' "$*"; }
 
 usage() {
-  sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -51,14 +52,14 @@ while [ $# -gt 0 ]; do
     --category) shift; CATEGORY="${1:-}" ;;
     --icon)     shift; ICON="${1:-}" ;;
     -h|--help)  usage; exit 0 ;;
-    *) die "未知参数：$1（--help 看用法）" ;;
+    *) die "未知参数：${1}（--help 看用法）" ;;
   esac
   shift
 done
 
 case " $VALID_CATEGORIES " in
   *" $CATEGORY "*) ;;
-  *) die "category 不合法：$CATEGORY（可选：$VALID_CATEGORIES）" ;;
+  *) die "category 不合法：${CATEGORY}（可选：${VALID_CATEGORIES}）" ;;
 esac
 
 if [ -n "$ICON" ]; then
@@ -115,16 +116,18 @@ preflight_remote() {
 
   local created age topics raw_pkg
   created="$(gh api "repos/$OWNER/$REPO" -q .created_at 2>/dev/null || true)"
-  [ -n "$created" ] || { warn "读不到 github.com/$OWNER/$REPO，确认已推送且公开"; PROBLEMS=$((PROBLEMS+1)); return 0; }
+  if [ -z "$created" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      warn "读不到 github.com/${OWNER}/${REPO}，确认已推送且公开"
+      PROBLEMS=$((PROBLEMS+1))
+      return 0
+    fi
+    die "读不到 github.com/${OWNER}/${REPO}：先推送并确认仓库公开，再重跑"
+  fi
 
-  age="$(python3 - "$created" <<'PY'
-import sys, datetime
-c = datetime.datetime.fromisoformat(sys.argv[1].replace('Z', '+00:00'))
-print(int((datetime.datetime.now(datetime.timezone.utc) - c).total_seconds() // 86400))
-PY
-)"
+  age="$(node -e 'console.log(Math.floor((Date.now()-Date.parse(process.argv[1]))/86400000))' "$created")"
   if [ "$age" -lt 1 ]; then
-    warn "仓库创建于 $created，还不满 1 天；CI 会拦，过几小时再跑"
+    warn "仓库创建于 ${created}，还不满 1 天；CI 会拦，过几小时再跑"
     PROBLEMS=$((PROBLEMS+1))
   else
     echo "✓ 仓库已存在 ${age} 天（要求 ≥ 1 天）"
@@ -155,7 +158,7 @@ if (!pkg.dsh || !pkg.dsh.bundle) {
 }
 console.log('✓ 远端 package.json 声明了 dsh.bundle')
 NODE
-    if node -e 'const p=require(process.argv[1]);process.exit(p.scripts&&p.scripts.prepare?0:1)' "$raw_pkg"; then
+    if node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.exit(p.scripts&&p.scripts.prepare?0:1)' "$raw_pkg"; then
       REMOTE_HAS_PREPARE=1
     fi
   else
@@ -219,11 +222,36 @@ step "生成 $ENTRY_PATH"
 
 cat "$TMP_ENTRY"
 
+# 上游是否已经有这个条目，决定这是「新增」「更新」还是「已经收录」
+UPSTREAM_ENTRY_STATE="unknown"
+if [ "$GH_OK" -eq 1 ]; then
+  UPSTREAM_ENTRY_RAW="$(mktemp "${TMPDIR:-/tmp}/dsh-upstream.XXXXXX")"
+  if gh api "repos/$UPSTREAM/contents/$ENTRY_PATH" -H 'Accept: application/vnd.github.raw' >"$UPSTREAM_ENTRY_RAW" 2>/dev/null; then
+    if cmp -s "$UPSTREAM_ENTRY_RAW" "$TMP_ENTRY"; then
+      UPSTREAM_ENTRY_STATE="same"
+    else
+      UPSTREAM_ENTRY_STATE="different"
+    fi
+  else
+    UPSTREAM_ENTRY_STATE="absent"
+  fi
+  rm -f "$UPSTREAM_ENTRY_RAW"
+  case "$UPSTREAM_ENTRY_STATE" in
+    same)      echo; echo "上游已经就是这个条目：无需提交。" ;;
+    different) echo; echo "上游已有该插件的条目：本次会更新它。" ;;
+  esac
+fi
+
 if [ "$DRY_RUN" -eq 1 ]; then
   printf '\n--dry-run：没有改动任何远端。去掉 --dry-run 就会 fork、推分支、开 PR。\n'
   if [ "$PROBLEMS" -gt 0 ]; then
     printf '还有 %s 个提醒，见上面的 "!"。\n' "$PROBLEMS"
   fi
+  exit 0
+fi
+
+if [ "$UPSTREAM_ENTRY_STATE" = "same" ]; then
+  printf '\n已收录：上游条目与本次生成的一致，没有要提交的改动。\n'
   exit 0
 fi
 
@@ -254,14 +282,22 @@ if ! gh api "repos/$FORK" >/dev/null 2>&1; then
 fi
 gh api "repos/$FORK" >/dev/null 2>&1 || die "fork 还没就绪，稍等几秒重跑"
 
-step "同步上游 main"
-if [ ! -d "$WORKDIR/.git" ]; then
-  mkdir -p "$(dirname "$WORKDIR")"
-  gh repo clone "$FORK" "$WORKDIR" -- --depth=50 >/dev/null
+step "同步 fork 到上游"
+FORK_REPO="${UPSTREAM#*/}"
+# 上游仓库约 435 MB，不整仓 clone：先用官方 API 把 fork 的 main 快进到上游，
+# 再从 fork 的 main 拉分支。这样推送的父提交一定在 fork 里，浅克隆也能推。
+if gh api --method POST "repos/$ME/$FORK_REPO/merge-upstream" -f branch=main >/dev/null 2>&1; then
+  echo "✓ fork main 已同步到上游"
+else
+  warn "fork 没能自动同步（有分叉提交或权限不足）；将基于它当前的 main 开分支"
 fi
-git -C "$WORKDIR" remote get-url upstream >/dev/null 2>&1 \
-  || git -C "$WORKDIR" remote add upstream "https://github.com/$UPSTREAM.git"
-git -C "$WORKDIR" fetch --quiet --depth=1 upstream main
+
+step "准备浅克隆"
+mkdir -p "$(dirname "$WORKDIR")"
+if [ ! -d "$WORKDIR/.git" ]; then
+  gh repo clone "$FORK" "$WORKDIR" -- --depth=1 >/dev/null
+fi
+git -C "$WORKDIR" fetch --quiet --depth=1 origin main
 git -C "$WORKDIR" checkout --quiet -B "$BRANCH" FETCH_HEAD
 git -C "$WORKDIR" reset --quiet --hard FETCH_HEAD
 git -C "$WORKDIR" clean --quiet -fd
@@ -269,22 +305,36 @@ git -C "$WORKDIR" clean --quiet -fd
 # --- 7. 写条目并只提交这一个文件 ------------------------------------------
 EXISTED=0
 [ -f "$WORKDIR/$ENTRY_PATH" ] && EXISTED=1
+if [ "$UPSTREAM_ENTRY_STATE" = "different" ] && [ "$EXISTED" -eq 0 ]; then
+  die "上游已有这个条目，但 fork 的 main 没跟上（merge-upstream 失败）。先手动同步 fork，再重跑"
+fi
 mkdir -p "$WORKDIR/data/plugins"
 cp "$TMP_ENTRY" "$WORKDIR/$ENTRY_PATH"
 
 CHANGED="$(git -C "$WORKDIR" status --porcelain | wc -l | tr -d ' ')"
+if [ "$CHANGED" = "0" ]; then
+  printf '\n没有可提交的改动：上游或分支里已经是这个内容。\n'
+  exit 0
+fi
 [ "$CHANGED" = "1" ] || die "工作区应只改 1 个文件，实际 $CHANGED 个——先看看 $WORKDIR"
 
 if [ "$EXISTED" -eq 1 ]; then VERB="Update"; else VERB="Add"; fi
 
 step "待提交的 diff"
-git -C "$WORKDIR" --no-pager diff -- "$ENTRY_PATH"
+git -C "$WORKDIR" add "$ENTRY_PATH"
+git -C "$WORKDIR" --no-pager diff --cached -- "$ENTRY_PATH"
 
 # --- 8. 提交、推送、开 PR --------------------------------------------------
 step "提交并推送"
-git -C "$WORKDIR" add "$ENTRY_PATH"
 git -C "$WORKDIR" commit --quiet -m "$VERB $OWNER/$REPO"
-git -C "$WORKDIR" push --quiet -u origin "$BRANCH" --force-with-lease
+# 浅克隆默认只跟踪 main，add-test-plugin 不会被登记成 remote-tracking branch，
+# 无参数的 --force-with-lease 因此会报 stale info；显式拿远端当前 sha 作 lease。
+REMOTE_SHA="$(git -C "$WORKDIR" ls-remote origin "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')"
+if [ -n "$REMOTE_SHA" ]; then
+  git -C "$WORKDIR" push --quiet -u origin "$BRANCH" "--force-with-lease=refs/heads/$BRANCH:$REMOTE_SHA"
+else
+  git -C "$WORKDIR" push --quiet -u origin "$BRANCH"
+fi
 
 step "开 PR"
 PR_URL="$(gh pr list --repo "$UPSTREAM" --head "$ME:$BRANCH" --state open --json url -q '.[0].url // ""' 2>/dev/null || true)"
@@ -298,6 +348,8 @@ else
     --title "$VERB $OWNER/$REPO" \
     --body "$(cat <<EOF
 Adds \`$ENTRY_PATH\` for https://github.com/$OWNER/$REPO.
+
+Install: \`dsh plugin --profile web add github:$OWNER/$REPO\`
 
 - [x] one entry file; no generated README changes
 - [x] \`package.json\` declares \`dsh.bundle\`
